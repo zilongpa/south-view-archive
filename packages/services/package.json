@@ -1,0 +1,36 @@
+{
+  "name": "@southview/services",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./auth": "./src/auth.ts",
+    "./mail": "./src/mail.ts",
+    "./storage": "./src/storage.ts",
+    "./photos": "./src/photos.ts",
+    "./upload-ticket": "./src/upload-ticket.ts",
+    "./config": "./src/config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "grant-reviewer": "tsx script/grant-reviewer.ts",
+    "check-storage": "tsx script/check-storage.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1146.0",
+    "@aws-sdk/s3-request-presigner": "3.1146.0",
+    "@better-auth/drizzle-adapter": "1.7.7",
+    "@southview/db": "workspace:*",
+    "@southview/validators": "workspace:*",
+    "better-auth": "1.7.7",
+    "drizzle-orm": "0.45.3",
+    "nodemailer": "10.0.14",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "8.0.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

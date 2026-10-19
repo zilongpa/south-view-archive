@@ -1,0 +1,736 @@
+'use client';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ArrowLeft, ArrowRight, CheckCheck, Inbox, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { reviewInputSchema, type ArchiveData, type ReviewInput, type SubmissionRecord } from '@southview/validators';
+import { communityRequest, signOutCommunity, type CommunitySession } from '@/lib/community-client';
+import { filterReviewQueue, kindLabels, parseReviewState, reviewLabels, reviewUrl, selectedReview, submissionPerson, unavailableVet, type ReviewState } from '@/lib/review-state';
+import { CommunityNotice } from './community-shell';
+import { StoryContextFields } from './story-context-fields';
+import { PrivateSubmissionPhoto } from './submission-manager';
+import { OriginalSubmission, ReviewActions, ReviewDialog, ReviewHistory, ReviewQueue, ReviewStats, VetPanel } from './review-panels';
+
+export function ReviewDesk({ archive }: { archive: ArchiveData }) {
+  const params = useSearchParams();
+  const [state, setState] = useState(() => parseReviewState(params));
+  const [session, setSession] = useState<CommunitySession | null>(null);
+  const [items, setItems] = useState<SubmissionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [mobileDetail, setMobileDetail] = useState(!!state.submission);
+  const [revision, setRevision] = useState(0);
+  const dirty = useRef(false);
+  const currentUrl = useRef('');
+  const onDirtyChange = useCallback((value: boolean) => { dirty.current = value; }, []);
+  const confirmLeave = useCallback(() => !dirty.current || window.confirm('Discard your unsaved review edits?'), []);
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const access = await communityRequest<CommunitySession>('/session');
+      setSession(access);
+      if (access.reviewer) {
+        const result = await communityRequest<{ submissions: SubmissionRecord[] }>('/review');
+        setItems(result.submissions);
+        setRevision((value) => value + 1);
+        setLoaded(true);
+        dirty.current = false;
+      } else { setItems([]); setLoaded(false); dirty.current = false; }
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'The review queue could not be loaded.');
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    currentUrl.current = window.location.href;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirty.current) { event.preventDefault(); event.returnValue = ''; }
+    };
+    const navigate = (event: MouseEvent) => {
+      const anchor = (event.target as Element)?.closest?.('a');
+      if (!anchor || anchor.target === '_blank' || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0 || anchor.href === window.location.href) return;
+      if (!confirmLeave()) { event.preventDefault(); event.stopPropagation(); }
+    };
+    const pop = (event: PopStateEvent) => {
+      if (!confirmLeave()) {
+        event.stopImmediatePropagation();
+        window.history.pushState(null, '', currentUrl.current);
+      } else {
+        dirty.current = false;
+        const next = parseReviewState(new URLSearchParams(window.location.search));
+        setState(next);
+        setMobileDetail(!!next.submission);
+        currentUrl.current = window.location.href;
+      }
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    document.addEventListener('click', navigate, true);
+    window.addEventListener('popstate', pop, true);
+    return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', navigate, true); window.removeEventListener('popstate', pop, true); };
+  }, [confirmLeave]);
+  function update(patch: Partial<ReviewState>, selecting = false) {
+    const next = { ...state, ...patch, submission: selecting ? patch.submission ?? null : null };
+    if (next.submission !== state.submission && !confirmLeave()) return;
+    dirty.current = false;
+    setState(next);
+    setNotice('');
+    if (selecting) setMobileDetail(true);
+    window.history.replaceState(null, '', reviewUrl(next));
+    currentUrl.current = window.location.href;
+  }
+  const visible = filterReviewQueue(items, state, archive);
+  const selected = selectedReview(items, visible, state.submission);
+  useEffect(() => {
+    if (selected && !state.submission) {
+      const next = { ...state, submission: selected.id };
+      setState(next);
+      window.history.replaceState(null, '', reviewUrl(next));
+      currentUrl.current = window.location.href;
+    }
+  }, [selected, state]);
+  if (loading && !session) return <div className="review-access community-loading"><LoaderCircle size={22} className="community-spinner" /> Opening the review desk…</div>;
+  if (!session?.reviewer) return <div className="review-access"><CommunityNotice title="Reviewer access is required">Sign in with your assigned review account to open this workspace.</CommunityNotice>{error && <CommunityNotice kind="error">{error}</CommunityNotice>}<Link className="community-primary" href="/sign-in?next=%2Fadmin%2Fcontributions">Sign in to review <ArrowRight size={17} /></Link></div>;
+  return <>
+    <div className="review-desk-heading"><div><h1>Review desk</h1><span><ShieldCheck size={15} aria-hidden="true" /> Staff workspace</span></div>
+      <div className="review-account"><details><summary>Reviewer account</summary><p>{session.user?.email}</p><button className="community-text-button" onClick={() => { if (confirmLeave()) void signOutCommunity().catch((failure) => setError(failure.message)); }}>Sign out</button></details><button className="community-secondary" disabled={loading} onClick={() => { if (confirmLeave()) void load(); }}><RefreshCw size={16} className={loading ? 'community-spinner' : ''} /> Refresh</button></div>
+    </div>
+    {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
+    {!loaded ? <div className="review-access">{loading ? 'Loading submissions…' : 'The queue is unavailable. Refresh to try again.'}</div> : <>
+      <ReviewStats items={items} selected={state.status} onSelect={(status) => update({ status })} />
+      <div className="review-workspace" data-mobile-detail={mobileDetail}>
+        <ReviewQueue items={items} archive={archive} state={state} selectedId={selected?.id} onChange={(patch) => update(patch)} onSelect={(submission) => update({ submission }, true)} />
+        <div className="review-detail-scroll">
+          <button className="review-mobile-back community-text-button" onClick={() => setMobileDetail(false)}><ArrowLeft size={17} /> Back to submissions</button>
+          {notice && <CommunityNotice kind="success">{notice}</CommunityNotice>}
+          {selected && !visible.some((item) => item.id === selected.id) && <p className="review-filter-note">This submission is outside the current filters. It stays open until you select another.</p>}
+          {selected ? <ReviewEditor key={`${selected.id}-${selected.updatedAt}-${revision}`} record={selected} archive={archive} onDirtyChange={onDirtyChange} onReviewed={(record) => {
+            dirty.current = false;
+            setItems((previous) => previous.map((item) => item.id === record.id ? record : item));
+            setNotice(`Review saved: ${reviewLabels[record.status]}.`);
+          }} /> : <div className="review-empty"><Inbox size={32} /><h2>{state.submission ? 'Submission unavailable' : 'A clear desk'}</h2><p>{state.submission ? 'Choose a submission from the queue.' : 'Choose another filter or refresh the queue.'}</p></div>}
+        </div>
+      </div>
+    </>}
+  </>;
+}
+
+function ReviewEditor({ record, archive, onReviewed, onDirtyChange }: { record: SubmissionRecord; archive: ArchiveData; onReviewed: (record: SubmissionRecord) => void; onDirtyChange: (value: boolean) => void }) {
+  const [draft, setDraft] = useState({
+    title: record.input.title,
+    body: record.input.body,
+    context: record.input.context,
+    sourceCreator: record.input.sourceCreator,
+    narrator: record.input.narrator,
+    holdingInstitution: record.input.holdingInstitution,
+    personId: record.input.personId ?? '',
+    featured: false,
+    relatedPersonIds: record.input.relatedPersonIds,
+    placeIds: record.input.placeIds,
+    eventDate: record.input.eventDate,
+    newPersonName: record.input.proposedPersonName,
+    authorMessage: '',
+    publicNote: '',
+    internalNote: '',
+  });
+  const [action, setAction] = useState<ReviewInput['action']>(
+    record.status === 'published' ? 'withdraw' : 'publish',
+  );
+  const readOnly = ['withdrawn', 'rejected', 'draft'].includes(record.status);
+  const [applyTo, setApplyTo] = useState<ReviewInput['applyTo']>('entry');
+  const [sourceIds, setSourceIds] = useState<string[]>([]);
+  const [photoIds, setPhotoIds] = useState(record.photos.map((photo) => photo.id));
+  const [photoEdits, setPhotoEdits] = useState(
+    record.photos.map((photo) => ({
+      id: photo.id,
+      caption: photo.caption,
+      creator: photo.creator,
+      rights: photo.rights,
+    })),
+  );
+  const [place, setPlace] = useState({
+    id: '',
+    name: '',
+    scope: 'cemetery' as 'cemetery' | 'atlanta',
+    lng: '',
+    lat: '',
+    precision: 'unmapped' as 'reference' | 'address' | 'verified' | 'unmapped',
+    note: '',
+    relationship: '',
+  });
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('submission');
+  const [confirming, setConfirming] = useState(false);
+  const snapshot = JSON.stringify({ draft, applyTo, sourceIds, photoIds, photoEdits, place });
+  const initialSnapshot = useRef(snapshot);
+  const dirty = snapshot !== initialSnapshot.current;
+  useEffect(() => { onDirtyChange(dirty || busy); }, [dirty, busy, onDirtyChange]);
+  // Any public edit invalidates the publication acknowledgement, including place edits.
+  useEffect(() => { setChecked(false); }, [snapshot]);
+  function openDecision(next: ReviewInput['action']) {
+    setAction(next);
+    setChecked(false);
+    setError('');
+    setConfirming(true);
+  }
+  function edit<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
+    setDraft((previous) => ({ ...previous, [key]: value }));
+    setChecked(false);
+  }
+  function choosePlace(id: string) {
+    const chosen = archive.places.find((place) => place.id === id);
+    setPlace(
+      chosen
+        ? {
+            id: chosen.id,
+            name: chosen.name,
+            scope: chosen.scope,
+            lng: chosen.coordinates ? String(chosen.coordinates[0]) : '',
+            lat: chosen.coordinates ? String(chosen.coordinates[1]) : '',
+            precision: chosen.precision,
+            note: chosen.locationNote,
+            relationship: '',
+          }
+        : {
+            id: '',
+            name: '',
+            scope: 'cemetery',
+            lng: '',
+            lat: '',
+            precision: 'unmapped',
+            note: '',
+            relationship: '',
+          },
+    );
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    if (readOnly || (record.status === 'published' && action !== 'withdraw')) return;
+    if (action === 'publish' && !checked) {
+      setError(
+        'Confirm that you have reviewed the public text, attribution, privacy, and image permissions.',
+      );
+      return;
+    }
+    if (action !== 'publish' && !draft.authorMessage.trim()) {
+      setError('Include a clear message to the contributor explaining this decision.');
+      return;
+    }
+    if (action === 'publish' && applyTo !== 'entry' && sourceIds.length === 0) {
+      setError('Choose supporting archive sources before changing a biography or map place.');
+      return;
+    }
+    if (
+      action === 'publish' &&
+      applyTo === 'place' &&
+      place.precision !== 'unmapped' &&
+      (!place.lng.trim() || !place.lat.trim())
+    ) {
+      setError('Supply both longitude and latitude, or choose Not yet mapped.');
+      return;
+    }
+    const payload: ReviewInput =
+      action !== 'publish'
+        ? {
+            action,
+            authorMessage: draft.authorMessage,
+            internalNote: draft.internalNote,
+            publicNote: draft.publicNote,
+            sourceIds: [],
+            applyTo: 'entry',
+          }
+        : {
+            action,
+            ...draft,
+            personId: draft.personId || null,
+            sourceIds,
+            approvedPhotoIds: photoIds,
+            photoEdits: photoEdits.filter((photo) => photoIds.includes(photo.id)),
+            applyTo,
+            ...(applyTo === 'place'
+              ? {
+                  placePatch: {
+                    placeId: place.id || `community-place-${record.id}`,
+                    name: place.name,
+                    scope: place.scope,
+                    coordinates:
+                      place.precision === 'unmapped'
+                        ? null
+                        : [Number(place.lng), Number(place.lat)],
+                    precision: place.precision,
+                    locationNote: place.note,
+                    relationship: place.relationship,
+                  },
+                }
+              : {}),
+          };
+    const parsed = reviewInputSchema.safeParse(payload);
+    if (!parsed.success) {
+      setError(parsed.error.issues.map((issue) => issue.message).join(' '));
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await communityRequest<{ submission: SubmissionRecord }>(
+        `/review/${encodeURIComponent(record.id)}`,
+        { method: 'POST', body: JSON.stringify(parsed.data) },
+      );
+      onDirtyChange(false);
+      setConfirming(false);
+      onReviewed(result.submission);
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'This review could not be saved. Your edits are still here.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  const editable = !readOnly && record.status !== 'published';
+  const credit = record.input.anonymous ? 'Anonymous contributor' : record.input.displayName;
+  return <section className="review-editor" aria-label="Review selected contribution">
+    <header className="review-detail-heading">
+      <div className="review-row-meta"><span className="community-status" data-status={record.status}>{reviewLabels[record.status]}</span><span>{kindLabels[record.input.kind]}</span></div>
+      <h2>{record.input.title}</h2>
+      <p>{credit} · {submissionPerson(record, archive)}</p>
+      <small>Created {record.createdAt.slice(0, 10)} · ID {record.id}</small>
+      <ReviewActions status={record.status} busy={busy} onDecision={openDecision} />
+      {dirty && <small className="review-unsaved">Unsaved review edits</small>}
+    </header>
+    <div className="review-detail-content">
+      <VetPanel state={unavailableVet} />
+      <div className="review-tabs" role="tablist" aria-label="Submission details">{[['submission', 'Submission'], ['draft', 'Public draft'], ['history', 'History']].map(([id, label], index, tabs) => <button key={id} id={`review-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`review-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id!)} onKeyDown={(event) => {
+        let next = index;
+        if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = tabs.length - 1;
+        else return;
+        event.preventDefault(); setTab(tabs[next]![0]!); document.getElementById(`review-tab-${tabs[next]![0]}`)?.focus();
+      }}>{label}</button>)}</div>
+      <div role="tabpanel" id="review-panel-submission" aria-labelledby="review-tab-submission" tabIndex={0} hidden={tab !== 'submission'}><OriginalSubmission record={record} archive={archive} /></div>
+      <div role="tabpanel" id="review-panel-history" aria-labelledby="review-tab-history" tabIndex={0} hidden={tab !== 'history'}><ReviewHistory record={record} /></div>
+      <div role="tabpanel" id="review-panel-draft" aria-labelledby="review-tab-draft" tabIndex={0} hidden={tab !== 'draft'}>
+        {!editable ? <CommunityNotice title={record.status === 'published' ? 'This contribution is published' : 'This review is closed'}>The original and decision history remain available. Changes to published text need a new correction.{record.publishedEntryId && <p><Link className="community-text-button" href={`/contributions/${encodeURIComponent(record.publishedEntryId)}`}>View published entry <ArrowRight size={15} /></Link></p>}{record.status === 'published' && <p><Link className="community-text-button" href={`/contribute${record.input.personId ? `?person=${encodeURIComponent(record.input.personId)}` : ''}`}>Submit a correction</Link></p>}</CommunityNotice> : <div className="community-fields">
+          <p className="review-credit">Public credit: <strong>{credit}</strong> — {draft.title}</p>
+              <label className="community-field">
+                <span>Person record</span>
+                <select
+                  value={draft.personId}
+                  onChange={(event) => edit('personId', event.target.value)}
+                >
+                  <option value="">Create a new person record</option>
+                  {archive.people.map((person) => (
+                    <option value={person.id} key={person.id}>
+                      {person.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!draft.personId && (
+                <label className="community-field">
+                  <span>New person’s public name</span>
+                  <input
+                    required
+                    value={draft.newPersonName}
+                    onChange={(event) => edit('newPersonName', event.target.value)}
+                    maxLength={160}
+                  />
+                </label>
+              )}
+              <label className="community-field">
+                <span>Public title</span>
+                <input
+                  required
+                  minLength={3}
+                  maxLength={160}
+                  value={draft.title}
+                  onChange={(event) => edit('title', event.target.value)}
+                />
+              </label>
+              <details className="story-context-details">
+                <summary>Confirm people, places, and event date</summary>
+                <StoryContextFields
+                  people={archive.people}
+                  places={archive.places}
+                  primaryPersonId={draft.personId}
+                  value={draft}
+                  onChange={(context) => {
+                    setDraft((previous) => ({ ...previous, ...context }));
+                    setChecked(false);
+                  }}
+                />
+              </details>
+              <label className="community-check">
+                <input
+                  type="checkbox"
+                  checked={draft.featured}
+                  onChange={(event) => edit('featured', event.target.checked)}
+                />
+                <span>
+                  Include in Editor’s selections when published. Personal memories keep their
+                  Community memory label.
+                </span>
+              </label>
+              <label className="community-field">
+                <span>Public text</span>
+                <textarea
+                  required
+                  minLength={20}
+                  maxLength={20000}
+                  rows={8}
+                  value={draft.body}
+                  onChange={(event) => edit('body', event.target.value)}
+                />
+                <small>
+                  Remove private contact details and preserve the contributor’s meaning. The
+                  original submission remains in the review record.
+                </small>
+              </label>
+              <label className="community-field">
+                <span>Public context</span>
+                <textarea
+                  maxLength={4000}
+                  rows={3}
+                  value={draft.context}
+                  onChange={(event) => edit('context', event.target.value)}
+                />
+              </label>
+              <div className="community-two-columns">
+                <label className="community-field">
+                  <span>Original author or creator</span>
+                  <input
+                    maxLength={200}
+                    value={draft.sourceCreator}
+                    onChange={(event) => edit('sourceCreator', event.target.value)}
+                  />
+                </label>
+                <label className="community-field">
+                  <span>Narrator</span>
+                  <input
+                    maxLength={200}
+                    value={draft.narrator}
+                    onChange={(event) => edit('narrator', event.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="community-field">
+                <span>Holding institution or collection</span>
+                <input
+                  maxLength={200}
+                  value={draft.holdingInstitution}
+                  onChange={(event) => edit('holdingInstitution', event.target.value)}
+                />
+              </label>
+              {record.photos.length > 0 && (
+                <section className="community-section">
+                  <h3>Photographs for publication</h3>
+                  <p className="community-hint" style={{ marginTop: 10 }}>
+                    Uncheck photographs that should remain private. Review the original and edit
+                    public captions and attribution.
+                  </p>
+                  {record.photos.map((photo) => {
+                    const edited = photoEdits.find((edit) => edit.id === photo.id)!;
+                    const update = (key: 'caption' | 'creator' | 'rights', value: string) => {
+                      setPhotoEdits((previous) =>
+                        previous.map((item) =>
+                          item.id === photo.id ? { ...item, [key]: value } : item,
+                        ),
+                      );
+                      setChecked(false);
+                    };
+                    return (
+                      <div className="community-section" key={photo.id}>
+                        <label className="community-check">
+                          <input
+                            type="checkbox"
+                            checked={photoIds.includes(photo.id)}
+                            onChange={(event) => {
+                              setPhotoIds((previous) =>
+                                event.target.checked
+                                  ? [...previous, photo.id]
+                                  : previous.filter((id) => id !== photo.id),
+                              );
+                              setChecked(false);
+                            }}
+                          />
+                          <span>Include this photograph in the public entry</span>
+                        </label>
+                        <div className="community-gallery">
+                          <PrivateSubmissionPhoto submissionId={record.id} photo={photo} original />
+                        </div>
+                        {photoIds.includes(photo.id) && (
+                          <div className="community-fields">
+                            <label className="community-field">
+                              <span>Public caption</span>
+                              <input
+                                required
+                                maxLength={500}
+                                value={edited.caption}
+                                onChange={(event) => update('caption', event.target.value)}
+                              />
+                            </label>
+                            <label className="community-field">
+                              <span>Creator</span>
+                              <input
+                                required
+                                maxLength={160}
+                                value={edited.creator}
+                                onChange={(event) => update('creator', event.target.value)}
+                              />
+                            </label>
+                            <label className="community-field">
+                              <span>Rights and use conditions</span>
+                              <input
+                                required
+                                maxLength={1000}
+                                value={edited.rights}
+                                onChange={(event) => update('rights', event.target.value)}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </section>
+              )}
+              <label className="community-field">
+                <span>Where should the approved content appear?</span>
+                <select
+                  value={applyTo}
+                  onChange={(event) => {
+                    setApplyTo(event.target.value as ReviewInput['applyTo']);
+                    setChecked(false);
+                  }}
+                >
+                  <option value="entry">Community entry, linked to the person</option>
+                  <option value="biography">Community entry and a sourced biography passage</option>
+                  <option value="place">Community entry and a map place update</option>
+                </select>
+                <small>
+                  Personal memories belong in clearly labeled community entries. Changes to factual
+                  records need claim-appropriate evidence.
+                </small>
+              </label>
+              <details>
+                <summary className="community-text-button">
+                  Select supporting sources ({sourceIds.length})
+                </summary>
+                <div
+                  className="community-fields"
+                  style={{ maxHeight: 300, overflow: 'auto', padding: '10px 3px' }}
+                >
+                  {archive.sources.map((source) => (
+                    <label className="community-check" key={source.id}>
+                      <input
+                        type="checkbox"
+                        checked={sourceIds.includes(source.id)}
+                        onChange={(event) => {
+                          setSourceIds((previous) =>
+                            event.target.checked
+                              ? [...previous, source.id]
+                              : previous.filter((id) => id !== source.id),
+                          );
+                          setChecked(false);
+                        }}
+                      />
+                      <span>
+                        {source.title}
+                        <small>{source.publisher}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </details>
+              {applyTo === 'place' && (
+                <section className="community-section">
+                  <h3>Map place update</h3>
+                  <div className="community-fields" style={{ marginTop: 18 }}>
+                    <label className="community-field">
+                      <span>Existing place or new place</span>
+                      <select
+                        value={place.id}
+                        onChange={(event) => choosePlace(event.target.value)}
+                      >
+                        <option value="">Add a new place</option>
+                        {archive.places.map((place) => (
+                          <option value={place.id} key={place.id}>
+                            {place.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="community-field">
+                      <span>Place name</span>
+                      <input
+                        required
+                        value={place.name}
+                        onChange={(event) =>
+                          setPlace((previous) => ({ ...previous, name: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <div className="community-two-columns">
+                      <label className="community-field">
+                        <span>Area</span>
+                        <select
+                          value={place.scope}
+                          onChange={(event) =>
+                            setPlace((previous) => ({
+                              ...previous,
+                              scope: event.target.value as 'cemetery' | 'atlanta',
+                            }))
+                          }
+                        >
+                          <option value="cemetery">South-View Cemetery</option>
+                          <option value="atlanta">Atlanta</option>
+                        </select>
+                      </label>
+                      <label className="community-field">
+                        <span>Position precision</span>
+                        <select
+                          value={place.precision}
+                          onChange={(event) =>
+                            setPlace((previous) => ({
+                              ...previous,
+                              precision: event.target.value as typeof place.precision,
+                            }))
+                          }
+                        >
+                          <option value="unmapped">Not yet mapped</option>
+                          <option value="reference">Reference position</option>
+                          <option value="address">Address position</option>
+                          <option value="verified">Independently verified position</option>
+                        </select>
+                      </label>
+                    </div>
+                    {place.precision !== 'unmapped' && (
+                      <div className="community-two-columns">
+                        <label className="community-field">
+                          <span>Longitude</span>
+                          <input
+                            required
+                            type="number"
+                            step="any"
+                            min={-180}
+                            max={180}
+                            value={place.lng}
+                            onChange={(event) =>
+                              setPlace((previous) => ({ ...previous, lng: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="community-field">
+                          <span>Latitude</span>
+                          <input
+                            required
+                            type="number"
+                            step="any"
+                            min={-85}
+                            max={85}
+                            value={place.lat}
+                            onChange={(event) =>
+                              setPlace((previous) => ({ ...previous, lat: event.target.value }))
+                            }
+                          />
+                        </label>
+                      </div>
+                    )}
+                    <label className="community-field">
+                      <span>Location evidence and limits</span>
+                      <textarea
+                        required
+                        value={place.note}
+                        onChange={(event) =>
+                          setPlace((previous) => ({ ...previous, note: event.target.value }))
+                        }
+                        rows={3}
+                      />
+                    </label>
+                    <label className="community-field">
+                      <span>Person’s relationship to this place</span>
+                      <textarea
+                        required
+                        value={place.relationship}
+                        onChange={(event) =>
+                          setPlace((previous) => ({
+                            ...previous,
+                            relationship: event.target.value,
+                          }))
+                        }
+                        rows={3}
+                      />
+                    </label>
+                  </div>
+                </section>
+              )}
+              <label className="community-field">
+                <span>Public editorial note</span>
+                <textarea
+                  maxLength={3000}
+                  rows={3}
+                  value={draft.publicNote}
+                  onChange={(event) => edit('publicNote', event.target.value)}
+                  placeholder="Context readers should see, including limitations or a correction explanation."
+                />
+              </label>
+        </div>}
+      </div>
+    </div>
+    {confirming && <ReviewDialog title={action === 'publish' ? 'Review before publishing' : action === 'reject' ? 'Reject this submission' : action === 'withdraw' ? 'Withdraw from public view' : 'Request information'} busy={busy} onClose={() => setConfirming(false)}>
+      <form className="community-fields" onSubmit={submit} noValidate>
+        {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
+        {action === 'publish' && <section className="review-public-preview">
+          <p className="community-preview-label">Public preview · {kindLabels[record.input.kind]}</p>
+          <h3>{draft.title}</h3><p className="review-credit">{credit} — {draft.title}</p>
+          <p>Person: {archive.people.find((person) => person.id === draft.personId)?.name || draft.newPersonName || 'New person — name required'}</p>
+          <p className="community-body">{draft.body}</p>
+          {draft.context && <p className="community-body">{draft.context}</p>}
+          <dl className="review-facts"><div><dt>Original author</dt><dd>{draft.sourceCreator || 'Not supplied'}</dd></div><div><dt>Narrator</dt><dd>{draft.narrator || 'Not supplied'}</dd></div><div><dt>Holding institution</dt><dd>{draft.holdingInstitution || 'Not supplied'}</dd></div></dl>
+          <h4>Sources</h4><ul className="review-source-list">{record.input.links.map((link) => <li key={link.url}><a href={link.url} target="_blank" rel="noopener noreferrer">{link.title}</a></li>)}{archive.sources.filter((source) => sourceIds.includes(source.id)).map((source) => <li key={source.id}>{source.title} · {source.publisher}</li>)}</ul>
+          {!sourceIds.length && !record.input.links.length && <p>No external sources selected. This contribution retains its own attribution.</p>}
+          <h4>Approved photographs · {photoIds.length}</h4>
+          <div className="community-gallery">{record.photos.filter((photo) => photoIds.includes(photo.id)).map((photo) => <PrivateSubmissionPhoto key={photo.id} submissionId={record.id} photo={{ ...photo, ...photoEdits.find((edit) => edit.id === photo.id) }} />)}</div>
+          <p>Publication: {applyTo === 'entry' ? 'Independent community entry' : applyTo === 'biography' ? 'Community entry and biography passage' : 'Community entry and map place update'}</p>
+          {applyTo === 'place' && <p>{place.name} · {place.relationship} · {place.precision}{place.precision !== 'unmapped' && ` · ${place.lng}, ${place.lat}`}<br />{place.note}</p>}
+          {draft.publicNote && <p>Editorial note: {draft.publicNote}</p>}
+          <button className="community-text-button" type="button" onClick={() => { setConfirming(false); setTab('draft'); }}>Edit public draft</button>
+        </section>}
+        {action !== 'publish' && <p>{action === 'withdraw' ? 'The published entry and its approved photographs will leave public view. The original and review history are retained.' : action === 'reject' ? 'The submission will remain private. Explain the decision to the contributor.' : 'Tell the contributor what to add through their private receipt page.'}</p>}
+          <label className="community-field">
+            <span>Message to the contributor {action !== 'publish' && '*'}</span>
+            <textarea
+              required={action !== 'publish'}
+              maxLength={3000}
+              rows={3}
+              value={draft.authorMessage}
+              onChange={(event) => edit('authorMessage', event.target.value)}
+              placeholder="Explain your decision and any information that would help."
+            />
+            <small>The contributor can read this message on their private receipt page.</small>
+          </label>
+          <label className="community-field">
+            <span>Internal review note</span>
+            <textarea
+              maxLength={5000}
+              rows={3}
+              value={draft.internalNote}
+              onChange={(event) => edit('internalNote', event.target.value)}
+            />
+            <small>Visible only to authorized reviewers.</small>
+          </label>
+
+        {action === 'publish' && <label className="community-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>I have checked the public text, contributor credit, personal information, sources, and photograph permissions.</span></label>}
+        <div className="review-dialog-actions"><button className="community-secondary" type="button" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button><button className={action === 'reject' || action === 'withdraw' ? 'community-danger' : 'community-primary'} disabled={busy} type="submit">{busy ? <LoaderCircle size={17} className="community-spinner" /> : <CheckCheck size={17} />}{action === 'publish' ? 'Approve & publish' : action === 'reject' ? 'Reject submission' : action === 'withdraw' ? 'Withdraw contribution' : 'Request information'}</button></div>
+      </form>
+    </ReviewDialog>}
+  </section>;
+}
