@@ -2,11 +2,21 @@
 
 Production URL: <https://south-view-archive.vercel.app/explore>.
 
+## Review desk release · 2026-10-19
+
+The completed review desk and Luna/web-search integration were deployed from source commit `5fd822c7a3ab2404d269dbdac1e8fb1977304f24` as **`dpl_BpqQS7661qCGY2w3KKsdTxaEsfhu`**. The production alias remains unchanged; the deployment URL is <https://south-view-archive-owvyzt0bf-junhui-huangs-projects.vercel.app>. Vercel's production build and TypeScript checks passed.
+
+Versioned migration `0005_vet.sql` was applied to the existing Supabase database using the existing local migration connection. The private Vet table has RLS enabled and contained zero runs at verification. No local test submissions, accounts, photos, or mail were imported. The source and release record are tracked in the existing private GitHub repository. GitHub publishing does not itself configure automatic Vercel deployments.
+
+After publication, `/explore`, `/stories`, `/people/john-lewis`, `/contribute`, and `/admin/contributions` returned HTTP 200. The session endpoint confirmed database mode. Unauthenticated `/api/community/review` and `/api/community/review/vet` returned private/no-store HTTP 403 responses without report data. The pages contained no isolated QA submissions or simulated reports.
+
+Production still has no Google OAuth or SMTP configuration, so account sign-in and staff web review require a real sign-in method and a reviewer grant. `OPENAI_API_KEY` is also intentionally not configured yet: real Vet calls remain disabled, and live Luna quality/latency have not been verified. See [AI vetting setup](AI-VETTING.md). Guest submissions remain available. No production test contribution was created during this release verification.
+
 On 2026-10-07, the application was deployed from local source using the Vercel CLI, without a GitHub connection, commit, or push at that time. A private source repository was subsequently created at [zilongpa/south-view-archive](https://github.com/zilongpa/south-view-archive) on 2026-10-19. Publishing that snapshot does not connect it to Vercel or trigger a deployment.
 
 The map-hover fix was redeployed on 2026-10-07 as `dpl_A9DqTGvCGeC6LkBB6hRHZ9FS12Cv`; the production domain stayed unchanged. Vercel build and type checks passed, and the map, person, and contribution pages returned HTTP 200. Edge checks confirmed previews beside markers and detail-panel updates when moving keyboard focus, with viewport parameters preserved. Actual pointer-hover feel still needs manual review.
 
-The resources and operating state below reflect that deployment record, not a new live audit on the documentation translation date.
+The resource descriptions below come from the earlier provisioning record; the release checks above are the later live audit.
 
 ## Provisioned resources
 

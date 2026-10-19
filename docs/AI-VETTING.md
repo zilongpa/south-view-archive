@@ -9,7 +9,7 @@ The review desk at `/admin/contributions` uses **GPT-6 Luna (`gpt-6-luna`)**, me
 3. Restart the application. File-backed local mode applies migration `0005_vet.sql` automatically. In database mode, run the existing `pnpm db:migrate` command using the migration database connection before starting the updated application.
 4. Open a submission and click **Vet**. Missing credentials show **Not configured**. A configured key is a readiness indication, not proof of model access or available quota.
 
-For a later deployment, add the server-only key in the deployment platform and apply the migration. The community route requests a 300-second function duration; the awaited check has a 240-second deadline and the OpenAI request a 210-second timeout. Confirm that the hosting plan and proxy allow these durations. This change does not deploy the app or modify cloud environment variables.
+For deployment, add the server-only key in the deployment platform and apply the migration. The community route requests a 300-second function duration; the awaited check has a 240-second deadline and the OpenAI request a 210-second timeout. Confirm that the hosting plan and proxy allow these durations. The 2026-10-19 production release and migration are recorded in [VERCEL.md](VERCEL.md); the OpenAI key is intentionally being configured later.
 
 ## What staff see
 
