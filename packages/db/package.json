@@ -8,7 +8,8 @@
     "./fixtures": "./src/fixtures.ts",
     "./seed": "./src/seed.ts",
     "./connection": "./src/connection.ts",
-    "./community": "./src/community.ts"
+    "./community": "./src/community.ts",
+    "./vet": "./src/vet.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

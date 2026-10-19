@@ -2,14 +2,47 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, CheckCheck, Inbox, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react';
-import { reviewInputSchema, type ArchiveData, type ReviewInput, type SubmissionRecord } from '@southview/validators';
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCheck,
+  Inbox,
+  LoaderCircle,
+  RefreshCw,
+  ShieldCheck,
+} from 'lucide-react';
+import {
+  reviewInputSchema,
+  type ArchiveData,
+  type ReviewInput,
+  type SubmissionRecord,
+  type VetOverview,
+} from '@southview/validators';
 import { communityRequest, signOutCommunity, type CommunitySession } from '@/lib/community-client';
-import { filterReviewQueue, kindLabels, parseReviewState, reviewLabels, reviewUrl, selectedReview, submissionPerson, unavailableVet, type ReviewState } from '@/lib/review-state';
+import {
+  filterReviewQueue,
+  kindLabels,
+  parseReviewState,
+  reviewLabels,
+  reviewUrl,
+  selectedReview,
+  submissionPerson,
+  vetState,
+  type VetState,
+  type ReviewState,
+} from '@/lib/review-state';
 import { CommunityNotice } from './community-shell';
 import { StoryContextFields } from './story-context-fields';
 import { PrivateSubmissionPhoto } from './submission-manager';
-import { OriginalSubmission, ReviewActions, ReviewDialog, ReviewHistory, ReviewQueue, ReviewStats, VetPanel } from './review-panels';
+import {
+  OriginalSubmission,
+  ReviewActions,
+  ReviewDialog,
+  ReviewHistory,
+  ReviewQueue,
+  ReviewStats,
+  VetPanel,
+} from './review-panels';
 
 export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   const params = useSearchParams();
@@ -22,10 +55,53 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   const [notice, setNotice] = useState('');
   const [mobileDetail, setMobileDetail] = useState(!!state.submission);
   const [revision, setRevision] = useState(0);
+  const [vet, setVet] = useState<VetOverview | null>(null);
+  const [vetError, setVetError] = useState('');
+  const [startingVet, setStartingVet] = useState<string | null>(null);
+  const vetLock = useRef(false);
+  const loadVet = useCallback(async () => {
+    try {
+      setVet(await communityRequest<VetOverview>('/review/vet'));
+      setVetError('');
+    } catch (failure) {
+      setVetError(
+        failure instanceof Error ? failure.message : 'AI check status could not be loaded.',
+      );
+    }
+  }, []);
+  async function runCheck(id: string) {
+    if (vetLock.current || vet?.runningSubmissionId || !vet?.configured) return;
+    vetLock.current = true;
+    setStartingVet(id);
+    setVetError('');
+    try {
+      setVet(await communityRequest<VetOverview>(`/review/${id}/vet`, { method: 'POST' }));
+    } catch (failure) {
+      await loadVet();
+      setVetError(
+        failure instanceof Error ? failure.message : 'The AI check could not be completed.',
+      );
+    } finally {
+      vetLock.current = false;
+      setStartingVet(null);
+    }
+  }
+  useEffect(() => {
+    if (!vet?.runningSubmissionId || startingVet) return;
+    const timer = window.setInterval(() => {
+      void loadVet();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [vet?.runningSubmissionId, startingVet, loadVet]);
   const dirty = useRef(false);
   const currentUrl = useRef('');
-  const onDirtyChange = useCallback((value: boolean) => { dirty.current = value; }, []);
-  const confirmLeave = useCallback(() => !dirty.current || window.confirm('Discard your unsaved review edits?'), []);
+  const onDirtyChange = useCallback((value: boolean) => {
+    dirty.current = value;
+  }, []);
+  const confirmLeave = useCallback(
+    () => !dirty.current || window.confirm('Discard your unsaved review edits?'),
+    [],
+  );
   async function load() {
     setLoading(true);
     setError('');
@@ -38,27 +114,56 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
         setRevision((value) => value + 1);
         setLoaded(true);
         dirty.current = false;
-      } else { setItems([]); setLoaded(false); dirty.current = false; }
+        void loadVet();
+      } else {
+        setItems([]);
+        setVet(null);
+        setLoaded(false);
+        dirty.current = false;
+      }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The review queue could not be loaded.');
-    } finally { setLoading(false); }
+      setError(
+        failure instanceof Error ? failure.message : 'The review queue could not be loaded.',
+      );
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
   useEffect(() => {
     currentUrl.current = window.location.href;
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (dirty.current) { event.preventDefault(); event.returnValue = ''; }
+      if (dirty.current) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
     };
     const navigate = (event: MouseEvent) => {
       const anchor = (event.target as Element)?.closest?.('a');
-      if (!anchor || anchor.target === '_blank' || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0 || anchor.href === window.location.href) return;
-      if (!confirmLeave()) { event.preventDefault(); event.stopPropagation(); }
+      if (
+        !anchor ||
+        anchor.target === '_blank' ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.button !== 0 ||
+        anchor.href === window.location.href
+      )
+        return;
+      if (!confirmLeave()) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     const pop = (event: PopStateEvent) => {
       if (!confirmLeave()) {
         event.stopImmediatePropagation();
         window.history.pushState(null, '', currentUrl.current);
       } else {
+        if (dirty.current) setRevision((value) => value + 1);
         dirty.current = false;
         const next = parseReviewState(new URLSearchParams(window.location.search));
         setState(next);
@@ -69,12 +174,22 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
     window.addEventListener('beforeunload', beforeUnload);
     document.addEventListener('click', navigate, true);
     window.addEventListener('popstate', pop, true);
-    return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', navigate, true); window.removeEventListener('popstate', pop, true); };
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload);
+      document.removeEventListener('click', navigate, true);
+      window.removeEventListener('popstate', pop, true);
+    };
   }, [confirmLeave]);
   function update(patch: Partial<ReviewState>, selecting = false) {
-    const next = { ...state, ...patch, submission: selecting ? patch.submission ?? null : null };
+    const next = { ...state, ...patch, submission: selecting ? (patch.submission ?? null) : null };
+    if (selecting && next.submission === state.submission) {
+      setMobileDetail(true);
+      return;
+    }
+    const discarding = dirty.current;
     if (next.submission !== state.submission && !confirmLeave()) return;
     dirty.current = false;
+    if (discarding) setRevision((value) => value + 1);
     setState(next);
     setNotice('');
     if (selecting) setMobileDetail(true);
@@ -91,33 +206,158 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
       currentUrl.current = window.location.href;
     }
   }, [selected, state]);
-  if (loading && !session) return <div className="review-access community-loading"><LoaderCircle size={22} className="community-spinner" /> Opening the review desk…</div>;
-  if (!session?.reviewer) return <div className="review-access"><CommunityNotice title="Reviewer access is required">Sign in with your assigned review account to open this workspace.</CommunityNotice>{error && <CommunityNotice kind="error">{error}</CommunityNotice>}<Link className="community-primary" href="/sign-in?next=%2Fadmin%2Fcontributions">Sign in to review <ArrowRight size={17} /></Link></div>;
-  return <>
-    <div className="review-desk-heading"><div><h1>Review desk</h1><span><ShieldCheck size={15} aria-hidden="true" /> Staff workspace</span></div>
-      <div className="review-account"><details><summary>Reviewer account</summary><p>{session.user?.email}</p><button className="community-text-button" onClick={() => { if (confirmLeave()) void signOutCommunity().catch((failure) => setError(failure.message)); }}>Sign out</button></details><button className="community-secondary" disabled={loading} onClick={() => { if (confirmLeave()) void load(); }}><RefreshCw size={16} className={loading ? 'community-spinner' : ''} /> Refresh</button></div>
-    </div>
-    {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
-    {!loaded ? <div className="review-access">{loading ? 'Loading submissions…' : 'The queue is unavailable. Refresh to try again.'}</div> : <>
-      <ReviewStats items={items} selected={state.status} onSelect={(status) => update({ status })} />
-      <div className="review-workspace" data-mobile-detail={mobileDetail}>
-        <ReviewQueue items={items} archive={archive} state={state} selectedId={selected?.id} onChange={(patch) => update(patch)} onSelect={(submission) => update({ submission }, true)} />
-        <div className="review-detail-scroll">
-          <button className="review-mobile-back community-text-button" onClick={() => setMobileDetail(false)}><ArrowLeft size={17} /> Back to submissions</button>
-          {notice && <CommunityNotice kind="success">{notice}</CommunityNotice>}
-          {selected && !visible.some((item) => item.id === selected.id) && <p className="review-filter-note">This submission is outside the current filters. It stays open until you select another.</p>}
-          {selected ? <ReviewEditor key={`${selected.id}-${selected.updatedAt}-${revision}`} record={selected} archive={archive} onDirtyChange={onDirtyChange} onReviewed={(record) => {
-            dirty.current = false;
-            setItems((previous) => previous.map((item) => item.id === record.id ? record : item));
-            setNotice(`Review saved: ${reviewLabels[record.status]}.`);
-          }} /> : <div className="review-empty"><Inbox size={32} /><h2>{state.submission ? 'Submission unavailable' : 'A clear desk'}</h2><p>{state.submission ? 'Choose a submission from the queue.' : 'Choose another filter or refresh the queue.'}</p></div>}
+  if (loading && !session)
+    return (
+      <div className="review-access community-loading">
+        <LoaderCircle size={22} className="community-spinner" /> Opening the review desk…
+      </div>
+    );
+  if (!session?.reviewer)
+    return (
+      <div className="review-access">
+        <CommunityNotice title="Reviewer access is required">
+          Sign in with your assigned review account to open this workspace.
+        </CommunityNotice>
+        {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
+        <Link className="community-primary" href="/sign-in?next=%2Fadmin%2Fcontributions">
+          Sign in to review <ArrowRight size={17} />
+        </Link>
+      </div>
+    );
+  return (
+    <>
+      <div className="review-desk-heading">
+        <div>
+          <h1>Review desk</h1>
+          <span>
+            <ShieldCheck size={15} aria-hidden="true" /> Staff workspace
+          </span>
+        </div>
+        <div className="review-account">
+          <details>
+            <summary>Reviewer account</summary>
+            <p>{session.user?.email}</p>
+            <button
+              className="community-text-button"
+              onClick={() => {
+                if (confirmLeave())
+                  void signOutCommunity().catch((failure) => setError(failure.message));
+              }}
+            >
+              Sign out
+            </button>
+          </details>
+          <button
+            className="community-secondary"
+            disabled={loading}
+            onClick={() => {
+              if (confirmLeave()) void load();
+            }}
+          >
+            <RefreshCw size={16} className={loading ? 'community-spinner' : ''} /> Refresh
+          </button>
         </div>
       </div>
-    </>}
-  </>;
+      {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
+      {vetError && <CommunityNotice kind="error">{vetError}</CommunityNotice>}
+      {(startingVet || vet?.runningSubmissionId) && (
+        <p className="review-filter-note" role="status">
+          A Vet check is running. You can browse submissions and make review decisions while it
+          completes.
+        </p>
+      )}
+      {!loaded ? (
+        <div className="review-access">
+          {loading ? 'Loading submissions…' : 'The queue is unavailable. Refresh to try again.'}
+        </div>
+      ) : (
+        <>
+          <ReviewStats
+            items={items}
+            selected={state.status}
+            onSelect={(status) => update({ status })}
+          />
+          <div className="review-workspace" data-mobile-detail={mobileDetail}>
+            <ReviewQueue
+              items={items}
+              archive={archive}
+              state={state}
+              selectedId={selected?.id}
+              onChange={(patch) => update(patch)}
+              onSelect={(submission) => update({ submission }, true)}
+              vet={vet}
+              startingVet={startingVet}
+            />
+            <div className="review-detail-scroll">
+              <button
+                className="review-mobile-back community-text-button"
+                onClick={() => setMobileDetail(false)}
+              >
+                <ArrowLeft size={17} /> Back to submissions
+              </button>
+              {notice && <CommunityNotice kind="success">{notice}</CommunityNotice>}
+              {selected && !visible.some((item) => item.id === selected.id) && (
+                <p className="review-filter-note">
+                  This submission is outside the current filters. It stays open until you select
+                  another.
+                </p>
+              )}
+              {selected ? (
+                <ReviewEditor
+                  key={`${selected.id}-${selected.updatedAt}-${revision}`}
+                  record={selected}
+                  archive={archive}
+                  onDirtyChange={onDirtyChange}
+                  vet={vetState(vet, selected.id, startingVet)}
+                  canVet={!!vet?.configured && !startingVet && !vet.runningSubmissionId}
+                  onVet={() => {
+                    void runCheck(selected.id);
+                  }}
+                  onReviewed={(record) => {
+                    dirty.current = false;
+                    setItems((previous) =>
+                      previous.map((item) => (item.id === record.id ? record : item)),
+                    );
+                    setNotice(`Review saved: ${reviewLabels[record.status]}.`);
+                    void loadVet();
+                  }}
+                />
+              ) : (
+                <div className="review-empty">
+                  <Inbox size={32} />
+                  <h2>{state.submission ? 'Submission unavailable' : 'A clear desk'}</h2>
+                  <p>
+                    {state.submission
+                      ? 'Choose a submission from the queue.'
+                      : 'Choose another filter or refresh the queue.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
 }
 
-function ReviewEditor({ record, archive, onReviewed, onDirtyChange }: { record: SubmissionRecord; archive: ArchiveData; onReviewed: (record: SubmissionRecord) => void; onDirtyChange: (value: boolean) => void }) {
+function ReviewEditor({
+  record,
+  archive,
+  onReviewed,
+  onDirtyChange,
+  vet,
+  canVet,
+  onVet,
+}: {
+  record: SubmissionRecord;
+  archive: ArchiveData;
+  onReviewed: (record: SubmissionRecord) => void;
+  onDirtyChange: (value: boolean) => void;
+  vet: VetState;
+  canVet: boolean;
+  onVet: () => void;
+}) {
   const [draft, setDraft] = useState({
     title: record.input.title,
     body: record.input.body,
@@ -168,9 +408,13 @@ function ReviewEditor({ record, archive, onReviewed, onDirtyChange }: { record: 
   const snapshot = JSON.stringify({ draft, applyTo, sourceIds, photoIds, photoEdits, place });
   const initialSnapshot = useRef(snapshot);
   const dirty = snapshot !== initialSnapshot.current;
-  useEffect(() => { onDirtyChange(dirty || busy); }, [dirty, busy, onDirtyChange]);
+  useEffect(() => {
+    onDirtyChange(dirty || busy);
+  }, [dirty, busy, onDirtyChange]);
   // Any public edit invalidates the publication acknowledgement, including place edits.
-  useEffect(() => { setChecked(false); }, [snapshot]);
+  useEffect(() => {
+    setChecked(false);
+  }, [snapshot]);
   function openDecision(next: ReviewInput['action']) {
     setAction(next);
     setChecked(false);
@@ -209,6 +453,7 @@ function ReviewEditor({ record, archive, onReviewed, onDirtyChange }: { record: 
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setError('');
     if (readOnly || (record.status === 'published' && action !== 'withdraw')) return;
     if (action === 'publish' && !checked) {
@@ -295,31 +540,124 @@ function ReviewEditor({ record, archive, onReviewed, onDirtyChange }: { record: 
   }
   const editable = !readOnly && record.status !== 'published';
   const credit = record.input.anonymous ? 'Anonymous contributor' : record.input.displayName;
-  return <section className="review-editor" aria-label="Review selected contribution">
-    <header className="review-detail-heading">
-      <div className="review-row-meta"><span className="community-status" data-status={record.status}>{reviewLabels[record.status]}</span><span>{kindLabels[record.input.kind]}</span></div>
-      <h2>{record.input.title}</h2>
-      <p>{credit} · {submissionPerson(record, archive)}</p>
-      <small>Created {record.createdAt.slice(0, 10)} · ID {record.id}</small>
-      <ReviewActions status={record.status} busy={busy} onDecision={openDecision} />
-      {dirty && <small className="review-unsaved">Unsaved review edits</small>}
-    </header>
-    <div className="review-detail-content">
-      <VetPanel state={unavailableVet} />
-      <div className="review-tabs" role="tablist" aria-label="Submission details">{[['submission', 'Submission'], ['draft', 'Public draft'], ['history', 'History']].map(([id, label], index, tabs) => <button key={id} id={`review-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`review-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id!)} onKeyDown={(event) => {
-        let next = index;
-        if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-        else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
-        else if (event.key === 'Home') next = 0;
-        else if (event.key === 'End') next = tabs.length - 1;
-        else return;
-        event.preventDefault(); setTab(tabs[next]![0]!); document.getElementById(`review-tab-${tabs[next]![0]}`)?.focus();
-      }}>{label}</button>)}</div>
-      <div role="tabpanel" id="review-panel-submission" aria-labelledby="review-tab-submission" tabIndex={0} hidden={tab !== 'submission'}><OriginalSubmission record={record} archive={archive} /></div>
-      <div role="tabpanel" id="review-panel-history" aria-labelledby="review-tab-history" tabIndex={0} hidden={tab !== 'history'}><ReviewHistory record={record} /></div>
-      <div role="tabpanel" id="review-panel-draft" aria-labelledby="review-tab-draft" tabIndex={0} hidden={tab !== 'draft'}>
-        {!editable ? <CommunityNotice title={record.status === 'published' ? 'This contribution is published' : 'This review is closed'}>The original and decision history remain available. Changes to published text need a new correction.{record.publishedEntryId && <p><Link className="community-text-button" href={`/contributions/${encodeURIComponent(record.publishedEntryId)}`}>View published entry <ArrowRight size={15} /></Link></p>}{record.status === 'published' && <p><Link className="community-text-button" href={`/contribute${record.input.personId ? `?person=${encodeURIComponent(record.input.personId)}` : ''}`}>Submit a correction</Link></p>}</CommunityNotice> : <div className="community-fields">
-          <p className="review-credit">Public credit: <strong>{credit}</strong> — {draft.title}</p>
+  return (
+    <section className="review-editor" aria-label="Review selected contribution">
+      <header className="review-detail-heading">
+        <div className="review-row-meta">
+          <span className="community-status" data-status={record.status}>
+            {reviewLabels[record.status]}
+          </span>
+          <span>{kindLabels[record.input.kind]}</span>
+        </div>
+        <h2>{record.input.title}</h2>
+        <p>
+          {credit} · {submissionPerson(record, archive)}
+        </p>
+        <small>
+          Created {record.createdAt.slice(0, 10)} · ID {record.id}
+        </small>
+        <ReviewActions
+          status={record.status}
+          busy={busy}
+          onDecision={openDecision}
+          onVet={onVet}
+          vetDisabled={!canVet}
+        />
+        {dirty && <small className="review-unsaved">Unsaved review edits</small>}
+      </header>
+      <div className="review-detail-content">
+        <VetPanel state={vet} onRun={onVet} canRun={canVet && !busy} />
+        <div className="review-tabs" role="tablist" aria-label="Submission details">
+          {[
+            ['submission', 'Submission'],
+            ['draft', 'Public draft'],
+            ['history', 'History'],
+          ].map(([id, label], index, tabs) => (
+            <button
+              key={id}
+              id={`review-tab-${id}`}
+              role="tab"
+              aria-selected={tab === id}
+              aria-controls={`review-panel-${id}`}
+              tabIndex={tab === id ? 0 : -1}
+              onClick={() => setTab(id!)}
+              onKeyDown={(event) => {
+                let next = index;
+                if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+                else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+                else if (event.key === 'Home') next = 0;
+                else if (event.key === 'End') next = tabs.length - 1;
+                else return;
+                event.preventDefault();
+                setTab(tabs[next]![0]!);
+                document.getElementById(`review-tab-${tabs[next]![0]}`)?.focus();
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div
+          role="tabpanel"
+          id="review-panel-submission"
+          aria-labelledby="review-tab-submission"
+          tabIndex={0}
+          hidden={tab !== 'submission'}
+        >
+          <OriginalSubmission record={record} archive={archive} />
+        </div>
+        <div
+          role="tabpanel"
+          id="review-panel-history"
+          aria-labelledby="review-tab-history"
+          tabIndex={0}
+          hidden={tab !== 'history'}
+        >
+          <ReviewHistory record={record} />
+        </div>
+        <div
+          role="tabpanel"
+          id="review-panel-draft"
+          aria-labelledby="review-tab-draft"
+          tabIndex={0}
+          hidden={tab !== 'draft'}
+        >
+          {!editable ? (
+            <CommunityNotice
+              title={
+                record.status === 'published'
+                  ? 'This contribution is published'
+                  : 'This review is closed'
+              }
+            >
+              The original and decision history remain available. Changes to published text need a
+              new correction.
+              {record.publishedEntryId && (
+                <p>
+                  <Link
+                    className="community-text-button"
+                    href={`/contributions/${encodeURIComponent(record.publishedEntryId)}`}
+                  >
+                    View published entry <ArrowRight size={15} />
+                  </Link>
+                </p>
+              )}
+              {record.status === 'published' && (
+                <p>
+                  <Link
+                    className="community-text-button"
+                    href={`/contribute${record.input.personId ? `?person=${encodeURIComponent(record.input.personId)}` : ''}`}
+                  >
+                    Submit a correction
+                  </Link>
+                </p>
+              )}
+            </CommunityNotice>
+          ) : (
+            <div className="community-fields">
+              <p className="review-credit">
+                Public credit: <strong>{credit}</strong> — {draft.title}
+              </p>
               <label className="community-field">
                 <span>Person record</span>
                 <select
@@ -682,55 +1020,201 @@ function ReviewEditor({ record, archive, onReviewed, onDirtyChange }: { record: 
                   placeholder="Context readers should see, including limitations or a correction explanation."
                 />
               </label>
-        </div>}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-    {confirming && <ReviewDialog title={action === 'publish' ? 'Review before publishing' : action === 'reject' ? 'Reject this submission' : action === 'withdraw' ? 'Withdraw from public view' : 'Request information'} busy={busy} onClose={() => setConfirming(false)}>
-      <form className="community-fields" onSubmit={submit} noValidate>
-        {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
-        {action === 'publish' && <section className="review-public-preview">
-          <p className="community-preview-label">Public preview · {kindLabels[record.input.kind]}</p>
-          <h3>{draft.title}</h3><p className="review-credit">{credit} — {draft.title}</p>
-          <p>Person: {archive.people.find((person) => person.id === draft.personId)?.name || draft.newPersonName || 'New person — name required'}</p>
-          <p className="community-body">{draft.body}</p>
-          {draft.context && <p className="community-body">{draft.context}</p>}
-          <dl className="review-facts"><div><dt>Original author</dt><dd>{draft.sourceCreator || 'Not supplied'}</dd></div><div><dt>Narrator</dt><dd>{draft.narrator || 'Not supplied'}</dd></div><div><dt>Holding institution</dt><dd>{draft.holdingInstitution || 'Not supplied'}</dd></div></dl>
-          <h4>Sources</h4><ul className="review-source-list">{record.input.links.map((link) => <li key={link.url}><a href={link.url} target="_blank" rel="noopener noreferrer">{link.title}</a></li>)}{archive.sources.filter((source) => sourceIds.includes(source.id)).map((source) => <li key={source.id}>{source.title} · {source.publisher}</li>)}</ul>
-          {!sourceIds.length && !record.input.links.length && <p>No external sources selected. This contribution retains its own attribution.</p>}
-          <h4>Approved photographs · {photoIds.length}</h4>
-          <div className="community-gallery">{record.photos.filter((photo) => photoIds.includes(photo.id)).map((photo) => <PrivateSubmissionPhoto key={photo.id} submissionId={record.id} photo={{ ...photo, ...photoEdits.find((edit) => edit.id === photo.id) }} />)}</div>
-          <p>Publication: {applyTo === 'entry' ? 'Independent community entry' : applyTo === 'biography' ? 'Community entry and biography passage' : 'Community entry and map place update'}</p>
-          {applyTo === 'place' && <p>{place.name} · {place.relationship} · {place.precision}{place.precision !== 'unmapped' && ` · ${place.lng}, ${place.lat}`}<br />{place.note}</p>}
-          {draft.publicNote && <p>Editorial note: {draft.publicNote}</p>}
-          <button className="community-text-button" type="button" onClick={() => { setConfirming(false); setTab('draft'); }}>Edit public draft</button>
-        </section>}
-        {action !== 'publish' && <p>{action === 'withdraw' ? 'The published entry and its approved photographs will leave public view. The original and review history are retained.' : action === 'reject' ? 'The submission will remain private. Explain the decision to the contributor.' : 'Tell the contributor what to add through their private receipt page.'}</p>}
-          <label className="community-field">
-            <span>Message to the contributor {action !== 'publish' && '*'}</span>
-            <textarea
-              required={action !== 'publish'}
-              maxLength={3000}
-              rows={3}
-              value={draft.authorMessage}
-              onChange={(event) => edit('authorMessage', event.target.value)}
-              placeholder="Explain your decision and any information that would help."
-            />
-            <small>The contributor can read this message on their private receipt page.</small>
-          </label>
-          <label className="community-field">
-            <span>Internal review note</span>
-            <textarea
-              maxLength={5000}
-              rows={3}
-              value={draft.internalNote}
-              onChange={(event) => edit('internalNote', event.target.value)}
-            />
-            <small>Visible only to authorized reviewers.</small>
-          </label>
+      {confirming && (
+        <ReviewDialog
+          title={
+            action === 'publish'
+              ? 'Review before publishing'
+              : action === 'reject'
+                ? 'Reject this submission'
+                : action === 'withdraw'
+                  ? 'Withdraw from public view'
+                  : 'Request information'
+          }
+          busy={busy}
+          onClose={() => setConfirming(false)}
+        >
+          <form className="community-fields" onSubmit={submit} noValidate>
+            {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
+            {action === 'publish' && (
+              <section className="review-public-preview">
+                <p className="community-preview-label">
+                  Public preview · {kindLabels[record.input.kind]}
+                </p>
+                <h3>{draft.title}</h3>
+                <p className="review-credit">
+                  {credit} — {draft.title}
+                </p>
+                <p>
+                  Person:{' '}
+                  {archive.people.find((person) => person.id === draft.personId)?.name ||
+                    draft.newPersonName ||
+                    'New person — name required'}
+                </p>
+                <p className="community-body">{draft.body}</p>
+                {draft.context && <p className="community-body">{draft.context}</p>}
+                <dl className="review-facts">
+                  <div>
+                    <dt>Original author</dt>
+                    <dd>{draft.sourceCreator || 'Not supplied'}</dd>
+                  </div>
+                  <div>
+                    <dt>Narrator</dt>
+                    <dd>{draft.narrator || 'Not supplied'}</dd>
+                  </div>
+                  <div>
+                    <dt>Holding institution</dt>
+                    <dd>{draft.holdingInstitution || 'Not supplied'}</dd>
+                  </div>
+                </dl>
+                <h4>Sources</h4>
+                <ul className="review-source-list">
+                  {record.input.links.map((link) => (
+                    <li key={link.url}>
+                      <a href={link.url} target="_blank" rel="noopener noreferrer">
+                        {link.title}
+                      </a>
+                    </li>
+                  ))}
+                  {archive.sources
+                    .filter((source) => sourceIds.includes(source.id))
+                    .map((source) => (
+                      <li key={source.id}>
+                        {source.title} · {source.publisher}
+                      </li>
+                    ))}
+                </ul>
+                {!sourceIds.length && !record.input.links.length && (
+                  <p>
+                    No external sources selected. This contribution retains its own attribution.
+                  </p>
+                )}
+                <h4>Approved photographs · {photoIds.length}</h4>
+                <div className="community-gallery">
+                  {record.photos
+                    .filter((photo) => photoIds.includes(photo.id))
+                    .map((photo) => (
+                      <PrivateSubmissionPhoto
+                        key={photo.id}
+                        submissionId={record.id}
+                        photo={{ ...photo, ...photoEdits.find((edit) => edit.id === photo.id) }}
+                      />
+                    ))}
+                </div>
+                <p>
+                  Publication:{' '}
+                  {applyTo === 'entry'
+                    ? 'Independent community entry'
+                    : applyTo === 'biography'
+                      ? 'Community entry and biography passage'
+                      : 'Community entry and map place update'}
+                </p>
+                {applyTo === 'place' && (
+                  <p>
+                    {place.name} · {place.relationship} · {place.precision}
+                    {place.precision !== 'unmapped' && ` · ${place.lng}, ${place.lat}`}
+                    <br />
+                    {place.note}
+                  </p>
+                )}
+                {draft.publicNote && <p>Editorial note: {draft.publicNote}</p>}
+                <button
+                  className="community-text-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirming(false);
+                    setTab('draft');
+                  }}
+                >
+                  Edit public draft
+                </button>
+              </section>
+            )}
+            {action !== 'publish' && (
+              <p>
+                {action === 'withdraw'
+                  ? 'The published entry and its approved photographs will leave public view. The original and review history are retained.'
+                  : action === 'reject'
+                    ? 'The submission will remain private. Explain the decision to the contributor.'
+                    : 'Tell the contributor what to add through their private receipt page.'}
+              </p>
+            )}
+            <label className="community-field">
+              <span>Message to the contributor {action !== 'publish' && '*'}</span>
+              <textarea
+                required={action !== 'publish'}
+                maxLength={3000}
+                rows={3}
+                value={draft.authorMessage}
+                onChange={(event) => edit('authorMessage', event.target.value)}
+                placeholder="Explain your decision and any information that would help."
+              />
+              <small>The contributor can read this message on their private receipt page.</small>
+            </label>
+            <label className="community-field">
+              <span>Internal review note</span>
+              <textarea
+                maxLength={5000}
+                rows={3}
+                value={draft.internalNote}
+                onChange={(event) => edit('internalNote', event.target.value)}
+              />
+              <small>Visible only to authorized reviewers.</small>
+            </label>
 
-        {action === 'publish' && <label className="community-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>I have checked the public text, contributor credit, personal information, sources, and photograph permissions.</span></label>}
-        <div className="review-dialog-actions"><button className="community-secondary" type="button" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button><button className={action === 'reject' || action === 'withdraw' ? 'community-danger' : 'community-primary'} disabled={busy} type="submit">{busy ? <LoaderCircle size={17} className="community-spinner" /> : <CheckCheck size={17} />}{action === 'publish' ? 'Approve & publish' : action === 'reject' ? 'Reject submission' : action === 'withdraw' ? 'Withdraw contribution' : 'Request information'}</button></div>
-      </form>
-    </ReviewDialog>}
-  </section>;
+            {action === 'publish' && (
+              <label className="community-check">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) => setChecked(event.target.checked)}
+                />
+                <span>
+                  I have checked the public text, contributor credit, personal information, sources,
+                  and photograph permissions.
+                </span>
+              </label>
+            )}
+            <div className="review-dialog-actions">
+              <button
+                className="community-secondary"
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className={
+                  action === 'reject' || action === 'withdraw'
+                    ? 'community-danger'
+                    : 'community-primary'
+                }
+                disabled={busy}
+                type="submit"
+              >
+                {busy ? (
+                  <LoaderCircle size={17} className="community-spinner" />
+                ) : (
+                  <CheckCheck size={17} />
+                )}
+                {action === 'publish'
+                  ? 'Approve & publish'
+                  : action === 'reject'
+                    ? 'Reject submission'
+                    : action === 'withdraw'
+                      ? 'Withdraw contribution'
+                      : 'Request information'}
+              </button>
+            </div>
+          </form>
+        </ReviewDialog>
+      )}
+    </section>
+  );
 }

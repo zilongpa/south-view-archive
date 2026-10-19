@@ -7,6 +7,7 @@ import { getMailMode, sendMail } from '@southview/services/mail';
 import { savePhoto, InvalidPhotoError } from '@southview/services/photos';
 import { getStorage, MAX_PHOTO_BYTES } from '@southview/services/storage';
 import { createUploadTicket, verifyUploadTicket } from '@southview/services/upload-ticket';
+import { getVetOverview, runVet } from '@southview/services/vet';
 import {
   submissionInputSchema,
   photoMetadataSchema,
@@ -17,7 +18,7 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 type Context = { params: Promise<{ path: string[] }> };
 const privateHeaders = {
   'Cache-Control': 'private, no-store',
@@ -205,6 +206,12 @@ async function handle(request: Request, context: Context): Promise<Response> {
     }
     if (path[0] === 'review') {
       if (!actor.reviewer) throw new HttpError(403, 'Staff review access is required.');
+      if (path.length === 2 && path[1] === 'vet' && method === 'GET')
+        return json(await getVetOverview(actor));
+      if (path.length === 3 && path[2] === 'vet' && method === 'POST') {
+        await runVet(path[1]!, actor);
+        return json(await getVetOverview(actor));
+      }
       if (path.length === 1 && method === 'GET')
         return json({
           submissions: (await repository.listReviewSubmissions(actor)).map((item) =>

@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "globalEnv": [
+    "OPENAI_API_KEY",
     "ARCHIVE_DATA_MODE",
     "ARCHIVE_LOCAL_PATH",
     "SOUTHVIEW_DATA_DIR",

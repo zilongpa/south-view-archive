@@ -2,7 +2,7 @@
 
 A public archive application designed to grow into a production service, connecting people with South-View Cemetery and places across Atlanta. Built from a focused **create-t3-turbo** starter: Next.js App Router, TypeScript, pnpm/Turbo, tRPC, Drizzle/PostgreSQL, and MapLibre GL JS.
 
-The application includes a map and people list, search and filters, cemetery/city views, cited person pages, links to oral histories and documents, community submissions, optional Google/email-code sign-in, private receipts, staff review, attributed publication, and withdrawal. The initial archive contains **3 people and 6 places**. Submissions are not published automatically. Personal memories retain their own attribution and do not automatically become biographical facts. AI review is not active, and recording or audio-file uploads are not supported. This repository snapshot includes work-in-progress dashboard components; their presence does not mean the new dashboard or Luna/web search integration is complete.
+The application includes a map and people list, search and filters, cemetery/city views, cited person pages, links to oral histories and documents, community submissions, optional Google/email-code sign-in, private receipts, staff review, attributed publication, and withdrawal. The initial archive contains **3 people and 6 places**. Submissions are not published automatically. Personal memories retain their own attribution and do not automatically become biographical facts. Staff can run optional GPT-6 Luna review with web research after configuring the server OpenAI key. Recording and audio-file uploads are not supported. AI findings remain advisory; only staff can publish.
 
 `/explore` uses a full-window map for immediate browsing. A single-line search bar and People entry sit at the upper left; separate South-View/Atlanta mode buttons have been removed. Selecting a pin opens a side panel, or a bottom panel on mobile. South-View has a translucent area highlight and outline, with zoom controls and a single labeled return button at the lower right. Zooming out to city scale automatically shows Atlanta locations **alongside all cemetery locations**; zooming back near the cemetery focuses that area again. Automatic changes preserve the camera, filters, and selected person. The detail panel can still locate a person's associated places. The OpenStreetMap outline is a reference area, not a surveyed property boundary. Pin tips anchor to coordinates, and filters, selection, and camera state remain in the URL. Facts, sources, and item-level attribution remain available in the details.
 
@@ -183,17 +183,25 @@ Public credit and private contact details are stored separately. Photos are deco
 
 People, places, person-place relationships, materials, sources, editorial issues, and predecessor-ID mappings are modeled separately. Evidence for a historical relationship is distinct from coordinate evidence. Records without coordinates remain readable. Grave markers are attributed reference positions, not surveyed navigation points. A shared surname or predecessor household record never triggers an automatic identity merge.
 
+## Staff review desk and AI vetting
+
+`/admin/contributions` provides a submission queue with title/person/ID search, status and content-type filters, real status counts, and a review workspace. Staff can compare the original, edit the public draft, inspect review history, request information, approve and publish, reject with a contributor-visible reason, or withdraw a published entry. Approval opens a public-content preview before the final publication action. Internal notes and private contact details remain staff-only. Selected records and filters survive refresh; unsaved edits receive a navigation prompt.
+
+**Vet** uses GPT-6 Luna (`gpt-6-luna`), medium reasoning, and required web search through one awaited OpenAI Responses request. Reports contain individual claims, verdicts, explanations, evidence links, reviewer notes, follow-up questions, limitations, and attachment coverage. Personal memories are not treated as false just because online corroboration is unavailable. Reports are stored privately, survive restarts, and become stale when new original material is added. Duplicate starts are blocked and failed checks can be retried. Human review and publication work independently of Vet.
+
+Set the server-only `OPENAI_API_KEY` in `apps/nextjs/.env.local` or the hosting platform to enable checks. Without it, the desk explicitly shows **Not configured**. Migration `0005_vet.sql` adds the private run history, using the existing PGlite/Supabase data modes and local/S3/R2 photo storage. Public archive and contributor-receipt APIs do not return AI reports. See [AI vetting configuration, privacy, recovery, and acceptance](docs/AI-VETTING.md). The full local suite passed 119 tests, all six workspace type checks and a production build; real OpenAI calls are intentionally deferred until the key is configured.
+
 ## Deployment and maintenance
 
 [South-View Archive](https://south-view-archive.vercel.app/explore) was deployed from local source on 2026-10-07 using Supabase and R2. Guest submissions, photos, and private receipts were verified online. The recorded deployment still needs real sign-in configuration for Google/email accounts and staff web review. See [Vercel deployment](docs/VERCEL.md) for resources, settings, and redeployment instructions.
 
-A source snapshot was published to the private [GitHub repository](https://github.com/zilongpa/south-view-archive) on 2026-10-19. This does not connect GitHub to Vercel or redeploy the site. Local credentials, runtime data, uploads, and validation screenshots are excluded. The active dashboard implementation remains work in progress in this snapshot.
+A source snapshot was published to the private [GitHub repository](https://github.com/zilongpa/south-view-archive) on 2026-10-19. This does not connect GitHub to Vercel or redeploy the site. Local credentials, runtime data, uploads, and validation screenshots are excluded. The review desk and Luna/web-search integration were subsequently completed and validated locally; live model checks require the server key described below.
 
 Deploy to a standard Next.js Node environment with monorepo support. Install from the root workspace and lockfile, use `apps/nextjs` as the application directory, build with `pnpm build`, and run with `pnpm start` or the hosting adapter. This is not a static export or a Sites-specific project: HTML or `public/` alone is insufficient because authentication, database, and media endpoints need a server. The application does not automatically publish or provision cloud resources.
 
 Before public operation, confirm text, coordinate precision, media conditions, domain, and the complete website iframe chain with South-View. Complete user accessibility trials, backup/restore exercises, mail/storage monitoring, and a contact-retention policy. Email has no durable background retry queue yet; operators must handle failed or interrupted deliveries. Live Google OAuth, SMTP, staff publication, and complete website embedding still need verification.
 
-As the collection grows, move search, pagination, and map-viewport queries closer to the database. Human review and original-submission retention remain the current workflow. Future AI assistance requires separate implementation and validation and must not replace staff publication decisions.
+As the collection grows, move search, pagination, and map-viewport queries closer to the database. Human review and original-submission retention remain the current workflow. AI assistance supports research and must not replace staff publication decisions; live model behavior still needs verification after configuration.
 
 ## Sources, data, and licensing
 
@@ -201,6 +209,7 @@ As the collection grows, move search, pagination, and map-viewport queries close
 - [Domain model and expansion rules](docs/DATA_MODEL.md): citations, relationships, identity matching, and coordinate precision.
 - [Community data and review](docs/COMMUNITY-DATA.md): private contacts, receipts, states, attributed publication, and withdrawal.
 - [Authentication, email, and photos](docs/COMMUNITY-SERVICES.md): email codes, reviewer grants, private storage, and runtime settings.
+- [AI vetting](docs/AI-VETTING.md): Luna/web search, private reports, model configuration, and validation limits.
 - [Google sign-in setup](docs/GOOGLE-AUTH.md): dedicated OAuth clients, callbacks, testing, and publication steps.
 - [Cloudflare R2 and S3 storage](docs/R2-STORAGE.md): private buckets, credentials, connection checks, providers, and photo migration.
 - [Website embedding](docs/EMBEDDING.md): iframe examples, allowed parent sites, permanent links, and acceptance checks.

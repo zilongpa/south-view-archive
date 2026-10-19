@@ -149,3 +149,12 @@ Some controls in this initial table were replaced by the map-first update descri
 Follow the root README to install and start the application. Run `pnpm typecheck`, `pnpm test`, and `pnpm build`, then `pnpm start`. Visit `/explore` and repeat the relevant flows above. Change `NEXT_PUBLIC_MAP_STYLE_URL` temporarily only in development for basemap-failure checks, restore it afterward, and rebuild. Database-failure tests use isolated test adapters rather than changing production connections.
 
 Screenshots referenced here are local validation artifacts under `screenshots/`, intentionally excluded from the GitHub snapshot. The 2026-10-19 repository/documentation update did not redeploy the application or complete the work-in-progress AI review dashboard.
+
+## Review desk and AI vetting · 2026-10-19
+
+- Completed the compact queue/workspace dashboard, URL-backed filters and selection, original/public-draft/history tabs, public preview before approval, contributor-visible rejection reasons, staff-only internal notes, and unsaved-edit protection.
+- Implemented real Luna (`gpt-6-luna`, medium) Responses calls with required web search, structured claim reports, citation-provenance validation, processed-image input, private persisted runs, stale-input detection, single-check concurrency, interruption recovery, and retry. No real provider request was made: the user chose to configure the OpenAI key later.
+- The full isolated test suite passed **119 tests**. It covers the official SDK with a mock transport, authorization/privacy boundaries, image failures, invalid citations, provider rate limits, database restart, supplements, duplicate starts, reruns, human publication, and existing archive/auth/storage flows. The final Vet and review-state subset passed 13 tests after the last privacy and display refinements.
+- Type checks passed across all six workspace packages, and the standard production build passed. Browser checks covered 390 × 844 mobile layout, keyboard tabs and Escape, a long title, empty/matching filters, modal actions, and an 830 × 472 reflow equivalent. Main action controls were 44px; no horizontal overflow was observed. These are not native 200% zoom or screen-reader certification.
+- UI checks used an isolated local database with explicitly fictional submissions and a clearly labeled simulated report. Those records, local attachments, mail, screenshots, and credentials are excluded from deployment and Git.
+- Production migration/deployment validation is recorded separately in [VERCEL.md](VERCEL.md).

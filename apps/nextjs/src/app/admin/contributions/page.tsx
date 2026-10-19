@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import { getArchive } from '@southview/db';
-import { CommunityShell } from '@/components/community-shell';
+import { Suspense } from 'react';
+import { SiteNavigation } from '@/components/site-navigation';
 import { ReviewDesk } from '@/components/review-desk';
+import '@/components/community.css';
+import '@/components/review-desk.css';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Contribution review desk',
@@ -11,12 +14,13 @@ export const metadata: Metadata = {
 export default async function ContributionReviewPage() {
   const archive = await getArchive();
   return (
-    <CommunityShell
-      eyebrow="ARCHIVE REVIEW"
-      title="A thoughtful place for every story."
-      description="Review contributions with their original context, clear attribution, and room for a conversation."
-    >
-      <ReviewDesk archive={archive} />
-    </CommunityShell>
+    <div className="review-page">
+      <SiteNavigation workspace />
+      <main id="main-content" className="review-main">
+        <Suspense fallback={<p className="review-access">Opening the review desk…</p>}>
+          <ReviewDesk archive={archive} />
+        </Suspense>
+      </main>
+    </div>
   );
 }

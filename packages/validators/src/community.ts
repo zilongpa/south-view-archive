@@ -163,6 +163,14 @@ export const reviewInputSchema = z
       })
       .optional(),
   })
+  .superRefine((review, ctx) => {
+    if (['reject', 'needs-information'].includes(review.action) && !review.authorMessage.trim())
+      ctx.addIssue({
+        code: 'custom',
+        path: ['authorMessage'],
+        message: 'Include a clear message to the contributor explaining this decision.',
+      });
+  })
   .transform((review) => ({
     ...review,
     ...(review.relatedPersonIds === undefined

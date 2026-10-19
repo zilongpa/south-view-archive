@@ -12,12 +12,14 @@ export function SiteNavigation({
   personId,
   standaloneHref = '/explore',
   children,
+  workspace = false,
 }: {
   overlay?: boolean;
   embed?: boolean;
   personId?: string;
   standaloneHref?: string;
   children?: ReactNode;
+  workspace?: boolean;
 }) {
   const pathname = usePathname();
   const menu = useRef<HTMLDetailsElement>(null);
@@ -49,13 +51,18 @@ export function SiteNavigation({
       : pathname.startsWith('/submissions/') || pathname === '/sign-in'
         ? '/my-contributions'
         : pathname;
-  const links = [
-    { href: '/explore', label: 'Explore' },
-    { href: '/stories', label: 'Stories' },
-    { href: '/about', label: 'About' },
-    { href: '/contribute', label: 'Contribute' },
-    { href: '/my-contributions', label: 'My contributions' },
-  ];
+  const links = workspace
+    ? [
+        { href: '/explore', label: 'Back to archive' },
+        { href: '/my-contributions', label: 'My account' },
+      ]
+    : [
+        { href: '/explore', label: 'Explore' },
+        { href: '/stories', label: 'Stories' },
+        { href: '/about', label: 'About' },
+        { href: '/contribute', label: 'Contribute' },
+        { href: '/my-contributions', label: 'My contributions' },
+      ];
   const navigationLinks = links.map(({ href, label }) => (
     <Link
       key={href}

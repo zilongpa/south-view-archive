@@ -264,6 +264,8 @@ test('community HTTP keeps draft text private and intact across invalid uploads 
   );
   assert.equal((await call('mine')).status, 401);
   assert.equal((await call('review')).status, 403);
+  assert.equal((await call('review/vet')).status, 403);
+  assert.equal((await call(`review/${item.id}/vet`, 'POST', {}, receipt)).status, 403);
   assert.equal(
     (await call(`review/${item.id}`, 'POST', { action: 'publish' }, receipt)).status,
     403,
@@ -440,6 +442,8 @@ test('community HTTP verifies account claims and gates originals, review, public
   const owner = await signIn(directory, 'owner@example.org', '192.0.2.20');
   const other = await signIn(directory, 'other@example.org', '192.0.2.21');
   assert.equal((await call('review', 'GET', undefined, owner)).status, 403);
+  assert.equal((await call('review/vet', 'GET', undefined, owner)).status, 403);
+  assert.equal((await call(`review/${item.id}/vet`, 'POST', {}, owner)).status, 403);
   assert.equal(
     (await call(`submissions/${item.id}/claim`, 'POST', {}, { ...other, receipt: item.receipt }))
       .status,
@@ -460,6 +464,21 @@ test('community HTTP verifies account claims and gates originals, review, public
     other.userId,
     'test-operator',
   ]);
+  const vet = await call('review/vet', 'GET', undefined, other);
+  assert.equal(vet.status, 200);
+  assert.equal(vet.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual((await vet.json()).runs, {});
+  assert.equal(
+    (
+      await call(
+        `review/${item.id}/vet`,
+        'POST',
+        {},
+        { ...other, origin: 'https://attacker.example' },
+      )
+    ).status,
+    403,
+  );
   const publish = {
     action: 'publish',
     newPersonName: 'Community Test Person',
@@ -468,6 +487,17 @@ test('community HTTP verifies account claims and gates originals, review, public
     publicNote: 'A family memory, shared with permission.',
     approvedPhotoIds: [photoId],
   };
+  for (const authorMessage of [undefined, '', '   ']) {
+    assert.equal(
+      (await call(`review/${item.id}`, 'POST', { action: 'reject', authorMessage }, other)).status,
+      400,
+    );
+  }
+  assert.equal(
+    (await store.query('SELECT id FROM community.reviews WHERE submission_id=$1', [item.id])).rows
+      .length,
+    0,
+  );
   const approved = await call(`review/${item.id}`, 'POST', publish, other);
   assert.equal(approved.status, 200);
   const approvedBody = await approved.json();
@@ -507,4 +537,23 @@ test('community HTTP verifies account claims and gates originals, review, public
     (await call(`submissions/${item.id}/photos/${photoId}`, 'GET', undefined, owner)).status,
     200,
   );
+  const rejected = await draft('owner@example.org');
+  const receipt = { receipt: rejected.receipt };
+  assert.equal((await call(`submissions/${rejected.id}/submit`, 'POST', {}, receipt)).status, 200);
+  const rejection = {
+    action: 'reject',
+    authorMessage: 'Please provide permission from the original author.',
+    internalNote: 'Private review note for staff only',
+  };
+  assert.equal((await call(`review/${rejected.id}`, 'POST', rejection, owner)).status, 403);
+  assert.equal((await call(`review/${rejected.id}`, 'POST', rejection, other)).status, 200);
+  assert.equal((await call(`review/${rejected.id}`, 'POST', rejection, other)).status, 200);
+  const rejectedView = await (
+    await call(`submissions/${rejected.id}`, 'GET', undefined, receipt)
+  ).json();
+  assert.equal(rejectedView.submission.status, 'rejected');
+  assert.equal(rejectedView.submission.reviews.length, 1);
+  assert.equal(rejectedView.submission.reviews[0].authorMessage, rejection.authorMessage);
+  assert.equal(rejectedView.submission.reviews[0].internalNote, undefined);
+  assert.equal(await getPublicContribution(rejected.id), null);
 });

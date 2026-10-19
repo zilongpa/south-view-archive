@@ -800,8 +800,11 @@ export async function reviewSubmission(
         'CONFLICT',
         'This decision is not available for the contribution’s current status.',
       );
-    if (review.action === 'needs-information' && !review.authorMessage.trim())
-      throw new DomainError('BAD_REQUEST', 'Tell the contributor what information is needed.');
+    if (['needs-information', 'reject'].includes(review.action) && !review.authorMessage.trim())
+      throw new DomainError(
+        'BAD_REQUEST',
+        'Include a clear message to the contributor explaining this decision.',
+      );
     const reviewId = randomUUID();
     await tx.query(
       'INSERT INTO community.reviews (id, submission_id, reviewer_id, action, decision) VALUES ($1,$2,$3,$4,$5::jsonb)',
