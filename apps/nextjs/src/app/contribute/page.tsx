@@ -23,8 +23,14 @@ export default async function ContributePage({
       description="Share a memory, a photograph, or a piece of history. Every contribution is reviewed by archive reviewers before it joins the public archive."
     >
       <ContributionForm
-        people={data.people.map((person) => ({ id: person.id, name: person.name }))}
-        places={data.places.map((place) => ({ id: place.id, name: place.name }))}
+        people={data.people.map(({ id, name, aliases, birthYear, deathYear }) => ({
+          id,
+          name,
+          aliases,
+          birthYear,
+          deathYear,
+        }))}
+        places={data.places.map(({ id, name, scope }) => ({ id, name, scope }))}
         initialPersonId={initialPersonId}
       />
     </CommunityShell>

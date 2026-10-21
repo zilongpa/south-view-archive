@@ -25,6 +25,8 @@ import {
 } from '@southview/validators';
 import { CommunityNotice } from './community-shell';
 import { StoryContextFields } from './story-context-fields';
+import { RecordPicker } from './record-picker';
+import type { RecordOption } from '@/lib/record-options';
 import { restoreDraftEventDate } from '@/lib/story-context';
 import {
   communityRequest,
@@ -35,7 +37,7 @@ import {
   type CommunitySession,
 } from '@/lib/community-client';
 
-export type PersonOption = { id: string; name: string };
+export type PersonOption = RecordOption;
 type PhotoDraft = {
   clientPhotoId: string;
   file: File | null;
@@ -603,20 +605,14 @@ export function ContributionForm({
               </div>
               <div className="community-fields">
                 {draft.kind !== 'new-person' && (
-                  <label className="community-field">
-                    <span>Who is this about?</span>
-                    <select
-                      value={draft.personId}
-                      onChange={(event) => change('personId', event.target.value)}
-                    >
-                      <option value="">Someone not listed here</option>
-                      {people.map((person) => (
-                        <option value={person.id} key={person.id}>
-                          {person.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <RecordPicker
+                    label="Who is this about?"
+                    options={people}
+                    value={draft.personId ? [draft.personId] : []}
+                    onChange={(ids) => change('personId', ids[0] ?? '')}
+                    placeholder="Search names or alternate names…"
+                    emptyLabel="Someone not listed here"
+                  />
                 )}
                 {(draft.kind === 'new-person' || !draft.personId) && (
                   <label className="community-field">

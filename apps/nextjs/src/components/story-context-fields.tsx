@@ -1,6 +1,8 @@
 'use client';
 import { useId } from 'react';
 import type { EventDate } from '@southview/validators';
+import type { RecordOption } from '@/lib/record-options';
+import { RecordPicker } from './record-picker';
 
 export type StoryContext = { relatedPersonIds: string[]; placeIds: string[]; eventDate: EventDate };
 export function StoryContextFields({
@@ -10,63 +12,38 @@ export function StoryContextFields({
   value,
   onChange,
 }: {
-  people: { id: string; name: string }[];
-  places: { id: string; name: string }[];
+  people: RecordOption[];
+  places: RecordOption[];
   primaryPersonId: string;
   value: StoryContext;
   onChange: (next: StoryContext) => void;
 }) {
   const id = useId();
-  const toggle = (field: 'relatedPersonIds' | 'placeIds', item: string) =>
-    onChange({
-      ...value,
-      [field]: value[field].includes(item)
-        ? value[field].filter((v) => v !== item)
-        : [...value[field], item],
-    });
   const date = value.eventDate;
   return (
     <div className="story-context-fields">
-      <fieldset>
-        <legend>
-          Other people in this story <span className="community-hint">(optional)</span>
-        </legend>
-        <div className="story-context-options">
-          {people
-            .filter((person) => person.id !== primaryPersonId)
-            .map((person) => (
-              <label key={person.id}>
-                <input
-                  type="checkbox"
-                  checked={value.relatedPersonIds.includes(person.id)}
-                  onChange={() => toggle('relatedPersonIds', person.id)}
-                />
-                {person.name}
-              </label>
-            ))}
-        </div>
-      </fieldset>
-      <fieldset>
-        <legend>
-          Places mentioned <span className="community-hint">(optional)</span>
-        </legend>
-        <div className="story-context-options">
-          {places.map((place) => (
-            <label key={place.id}>
-              <input
-                type="checkbox"
-                checked={value.placeIds.includes(place.id)}
-                onChange={() => toggle('placeIds', place.id)}
-              />
-              {place.name}
-            </label>
-          ))}
-        </div>
+      <RecordPicker
+        label="Other people in this story (optional)"
+        multiple
+        placeholder="Search names or alternate names…"
+        options={people.filter((person) => person.id !== primaryPersonId)}
+        value={value.relatedPersonIds.filter((key) => key !== primaryPersonId)}
+        onChange={(ids) => onChange({ ...value, relatedPersonIds: ids })}
+      />
+      <div>
+        <RecordPicker
+          label="Places mentioned (optional)"
+          multiple
+          placeholder="Search places…"
+          options={places}
+          value={value.placeIds}
+          onChange={(ids) => onChange({ ...value, placeIds: ids })}
+        />
         <p className="community-hint">
           Choose places this material is about. Reviewers confirm these links; they do not establish
           a precise location.
         </p>
-      </fieldset>
+      </div>
       <fieldset>
         <legend>When did the event or memory take place?</legend>
         <label className="community-field" htmlFor={`${id}-kind`}>

@@ -38,6 +38,24 @@ export function SignInForm({
       : '/contribute';
   const emailAvailable = session?.signInMethods?.emailOtp ?? session?.authAvailable ?? false;
   const googleAvailable = session?.signInMethods?.google ?? false;
+  const guestAction = (
+    <Link
+      className="community-secondary sign-in-guest"
+      href={guestDestination}
+      target={isFramed ? '_blank' : undefined}
+      rel={isFramed ? 'noopener noreferrer' : undefined}
+    >
+      <span>
+        {session?.user
+          ? guestDestination.startsWith('/submissions/')
+            ? 'Back to your contribution'
+            : 'Share a story'
+          : 'Continue as a guest'}
+      </span>
+      <ArrowRight size={17} aria-hidden="true" />
+      {isFramed && <span className="sr-only"> (opens in a new tab)</span>}
+    </Link>
+  );
 
   const loadSession = useCallback(async () => {
     setLoadingSession(true);
@@ -201,8 +219,8 @@ export function SignInForm({
             </>
           )}
           {notice && <CommunityNotice kind="success">{notice}</CommunityNotice>}
-          {googleAvailable && (
-            <div className="community-actions">
+          <div className="sign-in-choices" role="group" aria-label="Choose how to continue">
+            {googleAvailable && (
               <button
                 className={styles.button}
                 type="button"
@@ -223,14 +241,15 @@ export function SignInForm({
                   draggable={false}
                 />
               </button>
-              {busy === 'google' && (
-                <span className={styles.status} role="status">
-                  <LoaderCircle size={18} className="community-spinner" aria-hidden="true" />
-                  Opening Google…
-                </span>
-              )}
-            </div>
-          )}
+            )}
+            {guestAction}
+            {busy === 'google' && (
+              <span className={styles.status} role="status">
+                <LoaderCircle size={18} className="community-spinner" aria-hidden="true" />
+                Opening Google…
+              </span>
+            )}
+          </div>
           {emailAvailable && (
             <form className="community-fields" onSubmit={submit}>
               {googleAvailable && (
@@ -327,22 +346,9 @@ export function SignInForm({
           )}
         </>
       )}
-      <div className="community-actions">
-        <Link
-          className="community-text-button"
-          href={guestDestination}
-          target={isFramed ? '_blank' : undefined}
-          rel={isFramed ? 'noopener noreferrer' : undefined}
-        >
-          {session?.user
-            ? guestDestination.startsWith('/submissions/')
-              ? 'Back to your contribution'
-              : 'Share a story'
-            : 'Continue as a guest'}{' '}
-          <ArrowRight size={17} aria-hidden="true" />
-          {isFramed && <span className="sr-only"> (opens in a new tab)</span>}
-        </Link>
-      </div>
+      {(isFramed || loadingSession || session?.user) && (
+        <div className="sign-in-choices">{guestAction}</div>
+      )}
       {!session?.user && (
         <div className="community-aside-card">
           <ShieldCheck size={28} strokeWidth={1.3} aria-hidden="true" />

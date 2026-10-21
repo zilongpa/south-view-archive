@@ -33,6 +33,7 @@ import {
 } from '@/lib/review-state';
 import { CommunityNotice } from './community-shell';
 import { StoryContextFields } from './story-context-fields';
+import { RecordPicker } from './record-picker';
 import { PrivateSubmissionPhoto } from './submission-manager';
 import {
   OriginalSubmission,
@@ -658,20 +659,14 @@ function ReviewEditor({
               <p className="review-credit">
                 Public credit: <strong>{credit}</strong> — {draft.title}
               </p>
-              <label className="community-field">
-                <span>Person record</span>
-                <select
-                  value={draft.personId}
-                  onChange={(event) => edit('personId', event.target.value)}
-                >
-                  <option value="">Create a new person record</option>
-                  {archive.people.map((person) => (
-                    <option value={person.id} key={person.id}>
-                      {person.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <RecordPicker
+                label="Person record"
+                options={archive.people}
+                value={draft.personId ? [draft.personId] : []}
+                onChange={(ids) => edit('personId', ids[0] ?? '')}
+                placeholder="Search names or alternate names…"
+                emptyLabel="Create a new person record"
+              />
               {!draft.personId && (
                 <label className="community-field">
                   <span>New person’s public name</span>
