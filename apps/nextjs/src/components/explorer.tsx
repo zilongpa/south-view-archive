@@ -23,6 +23,7 @@ import './explorer-map.css';
 import { ProvidedBy } from './provided-by';
 import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
+import { ProfileBody } from './profile-view';
 import {
   searchArchive,
   scopeIncludesPlace,
@@ -535,7 +536,20 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         )}
                       </div>
                     </div>
-                    <p className="detail-summary">{selected.summary}</p>
+                    <div className="detail-summary">
+                      <ProfileBody
+                        body={selected.summary}
+                        sources={archive.sources
+                          .filter((source) => source.id.startsWith(`${selected.id}:`))
+                          .map((source) => ({
+                            id: source.id.slice(selected.id.length + 1),
+                            title: source.title,
+                            kind: 'link' as const,
+                            url: source.url,
+                            creator: source.creator,
+                          }))}
+                      />
+                    </div>
                     <ProvidedBy
                       creditIds={selected.creditIds}
                       title={`${selected.name}: overview`}
@@ -547,7 +561,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         return source ? (
                           <a
                             key={c.sourceId + c.locator}
-                            href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${source.id}`}
+                            href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${encodeURIComponent(source.id.startsWith(`${selected.id}:`) ? source.id.slice(selected.id.length + 1) : source.id)}`}
                           >
                             <BookOpen size={16} aria-hidden="true" />
                             <span>
@@ -603,7 +617,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                               />
                               <div className="place-source-links">
                                 <Link
-                                  href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${relation.citations[0]?.sourceId}`}
+                                  href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${encodeURIComponent((relation.citations[0]?.sourceId ?? '').replace(`${selected.id}:`, ''))}`}
                                 >
                                   Historical connection [
                                   {archive.sources.findIndex(
@@ -614,7 +628,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                                 {place.coordinateCitations.map((c) => (
                                   <Link
                                     key={c.sourceId}
-                                    href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${c.sourceId}`}
+                                    href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${encodeURIComponent(c.sourceId.replace(`${selected.id}:`, ''))}`}
                                   >
                                     Location source [
                                     {archive.sources.findIndex((s) => s.id === c.sourceId) + 1}]

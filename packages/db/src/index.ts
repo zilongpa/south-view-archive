@@ -1,5 +1,6 @@
 import { validateArchive, type ArchiveData } from '@southview/validators';
 import { fixtureArchive } from './fixtures';
+import { convertArchiveProfiles, projectProfilesToArchive } from './profile-conversion';
 
 export class ArchiveConfigurationError extends Error {
   override name = 'ArchiveConfigurationError';
@@ -20,7 +21,8 @@ export function createArchiveLoader(
 ) {
   return async function loadArchive(): Promise<ArchiveData> {
     const mode = environment.ARCHIVE_DATA_MODE ?? 'local';
-    if (mode === 'fixture') return validateArchive(fixtureArchive);
+    if (mode === 'fixture')
+      return projectProfilesToArchive(convertArchiveProfiles(fixtureArchive), fixtureArchive);
     if (mode !== 'database' && mode !== 'local')
       throw new ArchiveConfigurationError('ARCHIVE_DATA_MODE must be fixture, local, or database.');
     const url = environment.DATABASE_URL;
@@ -45,7 +47,8 @@ export function createArchiveLoader(
 
 export async function getArchive(): Promise<ArchiveData> {
   const mode = process.env.ARCHIVE_DATA_MODE ?? 'local';
-  if (mode === 'fixture') return validateArchive(fixtureArchive);
+  if (mode === 'fixture')
+    return projectProfilesToArchive(convertArchiveProfiles(fixtureArchive), fixtureArchive);
   if (mode !== 'local' && mode !== 'database')
     throw new ArchiveConfigurationError('ARCHIVE_DATA_MODE must be fixture, local, or database.');
   if (mode === 'database' && !process.env.DATABASE_URL)

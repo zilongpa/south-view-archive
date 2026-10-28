@@ -1,34 +1,33 @@
-import { discoveryInputSchema, type DiscoveryInput } from '@southview/validators';
+import { profileSearchInputSchema, type ProfileSearchInput } from '@southview/validators';
 
 export function parseStoriesState(
   params: Record<string, string | string[] | undefined>,
-): DiscoveryInput {
+): ProfileSearchInput {
   const first = (key: string) =>
     typeof params[key] === 'string' ? (params[key] as string) : undefined;
-  const type = first('type');
   const page = Number(first('page') ?? 1);
-  return discoveryInputSchema.parse({
+  return profileSearchInputSchema.parse({
     q: (first('q') ?? '').slice(0, 200),
-    type: ['all', 'person', 'story', 'material', 'photo'].includes(type ?? '') ? type : 'all',
-    theme: (first('theme') || 'all').slice(0, 80),
+    name: (first('name') ?? '').slice(0, 160),
+    tag: (first('tag') || first('theme') || 'all').slice(0, 80),
+    place: (first('place') ?? '').slice(0, 200),
     personId: first('personId')?.slice(0, 120) || undefined,
-    placeId: first('placeId')?.slice(0, 120) || undefined,
+    placeId: first('placeId')?.slice(0, 250) || undefined,
     sort: first('sort') === 'recent' ? 'recent' : 'relevance',
-    featured: first('featured') === '1',
     page: Number.isSafeInteger(page) && page > 0 ? Math.min(page, 10000) : 1,
   });
 }
 
-export function storiesHref(input: DiscoveryInput, patch: Partial<DiscoveryInput> = {}) {
+export function storiesHref(input: ProfileSearchInput, patch: Partial<ProfileSearchInput> = {}) {
   const next = { ...input, ...patch };
   const params = new URLSearchParams();
   if (next.q) params.set('q', next.q);
-  if (next.type !== 'all') params.set('type', next.type);
-  if (next.theme !== 'all') params.set('theme', next.theme);
+  if (next.name) params.set('name', next.name);
+  if (next.tag !== 'all') params.set('tag', next.tag);
+  if (next.place) params.set('place', next.place);
   if (next.personId) params.set('personId', next.personId);
   if (next.placeId) params.set('placeId', next.placeId);
   if (next.sort !== 'relevance') params.set('sort', next.sort);
-  if (next.featured) params.set('featured', '1');
   if (next.page > 1) params.set('page', String(next.page));
   return `/stories${params.size ? `?${params}` : ''}`;
 }

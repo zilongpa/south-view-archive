@@ -5,6 +5,8 @@ export * from './community';
 export * from './discovery';
 export * from './auth';
 export * from './vet';
+export * from './profiles';
+export * from './profile-search';
 
 export const citationSchema = z.object({ sourceId: z.string(), locator: z.string().optional() });
 export const sourceSchema = z.object({
@@ -15,7 +17,11 @@ export const sourceSchema = z.object({
   url: z
     .string()
     .refine(
-      (value) => /^https?:\/\//.test(value) || /^\/contributions\/[a-zA-Z0-9-]+$/.test(value),
+      (value) =>
+        /^https?:\/\//.test(value) ||
+        /^\/(?:contributions|people|api\/(?:community|profiles)\/(?:media|photos))\/[^\s]*$/.test(
+          value,
+        ),
       'A source must link to an original collection or a contribution.',
     ),
   accessedAt: z.string(),
