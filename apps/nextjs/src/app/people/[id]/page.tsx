@@ -27,11 +27,7 @@ function safeReturnPath(value: string | string[] | undefined, id: string) {
   if (typeof value !== 'string' || !value.startsWith('/')) return fallback;
   try {
     const url = new URL(value, 'https://archive.invalid');
-    if (
-      url.origin !== 'https://archive.invalid' ||
-      !['/explore', '/stories'].includes(url.pathname)
-    )
-      return fallback;
+    if (url.origin !== 'https://archive.invalid' || url.pathname !== '/explore') return fallback;
     return `${url.pathname}${url.search}`;
   } catch {
     return fallback;
@@ -67,6 +63,7 @@ export default async function PersonPage({ params, searchParams }: Props) {
       data={data}
       returnTo={safeReturnPath(query.from, person.id)}
       canonicalUrl={`${siteOrigin()}/people/${encodeURIComponent(person.id)}`}
+      startEditing={query.edit === '1'}
     />
   );
 }

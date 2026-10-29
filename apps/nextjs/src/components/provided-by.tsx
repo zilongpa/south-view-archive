@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ArchiveData } from '@southview/validators';
-import { withStoriesReturn } from '@/lib/stories-state';
+import { withArchiveReturn } from '@/lib/archive-return';
 
 export function ProvidedBy({
   creditIds,
@@ -24,7 +24,7 @@ export function ProvidedBy({
         return (
           <span key={id}>
             {path ? (
-              <Link href={returnTo ? withStoriesReturn(path, returnTo) : path}>{text}</Link>
+              <Link href={returnTo ? withArchiveReturn(path, returnTo) : path}>{text}</Link>
             ) : (
               text
             )}

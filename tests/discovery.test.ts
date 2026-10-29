@@ -344,7 +344,7 @@ test('editor selections filter public stories and rank them first only in empty 
   assert.equal(legacyResult.type === 'story' && legacyResult.featured, false);
 });
 
-test('tRPC discovery uses the public projection and person API includes secondary subjects', async (t) => {
+test('tRPC person API uses the public projection and includes secondary subjects', async (t) => {
   const data = archive();
   const store = await createStore({ mode: 'local', path: 'memory://', seed: false });
   const previousMode = process.env.ARCHIVE_DATA_MODE;
@@ -369,11 +369,9 @@ test('tRPC discovery uses the public projection and person API includes secondar
     );
   });
   const caller = createCaller({});
-  const results = await caller.archive.discover({ q: 'lantern procession', type: 'story' });
-  assert.equal(results.total, 1);
   const secondary = await caller.archive.person({ id: 'alonzo-herndon' });
   assert.ok(secondary.contributions.some((entry) => entry.id === 'lantern-evening'));
   assert.ok(secondary.materials.some((material) => material.id === data.materials[0]!.id));
   assert.ok(secondary.sources.some((source) => source.id === data.materials[0]!.sourceId));
-  assert.equal((await caller.archive.discover({ q: 'private-sentinel' })).total, 0);
+  assert.equal(JSON.stringify(await caller.archive.snapshot()).includes('private-sentinel'), false);
 });

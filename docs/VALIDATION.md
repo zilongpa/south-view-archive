@@ -4,6 +4,20 @@ Initial date: 2026-10-03. Environment: Windows, Node 24.19.0, pnpm 11.19.0, Next
 
 This is a historical record of the checks below, with later dated updates. Translation into English on 2026-10-19 does not imply that application tests or live-service checks were rerun. Screenshot paths refer to local validation artifacts under `docs/screenshots/`; those images are excluded from the private GitHub source snapshot.
 
+## Usability update · 2026-10-28
+
+Acting on the 2026-10-21 usability sessions (two testers, in-class), this update changed the public flow rather than adding features:
+
+- Navigation reduced to Explore, Share a story, and My contributions; the Stories page and its discovery route were removed because the site will be embedded in the cemetery's own website as a map and contribution tool. Published community stories remain on person pages and permanent contribution pages. About moved to the footer.
+- One wording for the contribution flow everywhere (`apps/nextjs/src/lib/copy.ts`): navigation, page heading, review button, and send button all say Share a story / Review my story / Send my story for review.
+- Contribution form: a required-field legend, consistent (optional) markers, example placeholders on every text field, provenance fields shown per story type, repeatable link rows instead of a `title | url` text syntax, and inline validation messages beside the field.
+- Map: grave markers (wine, round core) and related Atlanta places (green, diamond core) now differ in colour and shape, with a legend beside the cemetery-outline key. Screen-reader labels name the marker type.
+- Contrast: muted text darkened from 4.6:1 to 6.2:1 on the paper background; 8 to 10 px eyebrows and captions raised to 11 to 12 px; form-control borders meet 3:1.
+- In-page editing (second batch, same day): person pages gained an edit mode with + slots per section, inline mini-forms, a preview phase, and a send dialog that collects contact details once. Each block becomes one ordinary submission with an advisory `placement`; the review desk shows it under the original submission. `/contribute` was cut down to adding a new person plus a jump to person pages, and map, navigation, and sidebar entry points now lead to the person page in edit mode. Four unit tests cover block-to-submission mapping, local validation, session restore, and grouped receipt links.
+- Email removed entirely: no email-code sign-in, receipt mail, or review notifications. The receipt page and form preview now state that the private link is the only receipt. Reviewer dialogs say contributors are not notified.
+
+Checks after the change: all six workspace type checks passed, the isolated suite passed 111 tests (email-code tests replaced by a shared mocked-Google sign-in helper in `tests/helpers/google.ts`), and the production build succeeded with no `/stories` route. In a local browser session the map legend, three-item navigation, required-field legend, inline validation, the Google-only sign-in page, and a guest submission ending on the receipt page with its primary copy-link action were observed at desktop and 375px widths. Earlier sections below describe the Stories page and email flows as they existed at the time.
+
 ## Map browsing update · 2026-10-07
 
 The latest map interaction removes the separate South-View/Atlanta scope buttons, leaving one search row with the People entry. The duplicate locate button below the zoom controls has been removed; only the labeled South-View return button remains. Earlier references to manual scope controls and their screenshots describe previous versions.
@@ -67,17 +81,17 @@ The following results describe the initial validation stage:
 
 ## Community-contribution browser checks
 
-| Scenario | Observed result |
-| --- | --- |
-| Anonymous guest submission | No sign-in required; private name/email required. Preview confirmation persisted the record and returned a submission ID and private receipt. |
-| Restart and revisit | Submissions and accounts survived a Next restart; the original receipt still worked. |
-| Optional sign-in and claiming | Test codes went to the developer-only outbox, with an explicit no-email-sent message. The signed-in user claimed the submission using its original receipt. |
-| Human review and supplements | Reviewer access was granted through the CLI. After a request for information, the contributor saw the message and supplied text and an actual PNG test image. |
-| Publication | A memory without external links could be published independently. Its permanent page showed Anonymous contributor — entry title, with separate photo creator, permission, and provider credits. |
-| Person aggregation | Existing summaries, factual paragraphs, places, photos, and materials retained Initial archive compilation. New contributions appeared independently without overwriting names or biographies. |
-| Withdrawal | The test entry and public photo access were withdrawn; original content and review history remained. Temporary reviewer access was revoked and the session signed out. |
-| Mobile and keyboard | The 390 × 844 viewport had no horizontal overflow; fields were labeled and Tab moved from title to body. The 632 × 356 equivalent 200% reflow check also had no horizontal overflow. |
-| Embedded entry points | Global and person-specific contribution links used `_blank`, retaining the preselected person. City switching, sources, and details continued to work. |
+| Scenario                      | Observed result                                                                                                                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anonymous guest submission    | No sign-in required; private name/email required. Preview confirmation persisted the record and returned a submission ID and private receipt.                                                   |
+| Restart and revisit           | Submissions and accounts survived a Next restart; the original receipt still worked.                                                                                                            |
+| Optional sign-in and claiming | Test codes went to the developer-only outbox, with an explicit no-email-sent message. The signed-in user claimed the submission using its original receipt.                                     |
+| Human review and supplements  | Reviewer access was granted through the CLI. After a request for information, the contributor saw the message and supplied text and an actual PNG test image.                                   |
+| Publication                   | A memory without external links could be published independently. Its permanent page showed Anonymous contributor — entry title, with separate photo creator, permission, and provider credits. |
+| Person aggregation            | Existing summaries, factual paragraphs, places, photos, and materials retained Initial archive compilation. New contributions appeared independently without overwriting names or biographies.  |
+| Withdrawal                    | The test entry and public photo access were withdrawn; original content and review history remained. Temporary reviewer access was revoked and the session signed out.                          |
+| Mobile and keyboard           | The 390 × 844 viewport had no horizontal overflow; fields were labeled and Tab moved from title to body. The 632 × 356 equivalent 200% reflow check also had no horizontal overflow.            |
+| Embedded entry points         | Global and person-specific contribution links used `_blank`, retaining the preselected person. City switching, sources, and details continued to work.                                          |
 
 Browser test content was explicitly labeled as nonhistorical test material. No test memory was left in the public collection.
 
@@ -85,18 +99,18 @@ Browser test content was explicitly labeled as nonhistorical test material. No t
 
 Some controls in this initial table were replaced by the map-first update described above.
 
-| Scenario | Observed result |
-| --- | --- |
-| Search Lewis | List, count, and places narrowed together to John Lewis; empty results offered a clear-filters action. |
-| Enterprise theme | Only Alonzo Herndon appeared, with matching filtered map places. |
-| Keyboard Enter / Escape | Opened the person preview, moved focus into the panel, and restored the trigger after closing. Map points were focusable buttons. |
-| Cemetery / Atlanta switching | Preserved the selected person while changing the associated places; a new selection moved the camera. |
-| Archive pages and sources | Direct person URLs, numbered source anchors, and original-source links worked. Returning preserved search, scope, person, and camera. |
-| City overview | Three places clustered into a circle labeled 3, expanding on zoom; attribution stayed visible. |
-| Mobile 390 × 844 | Map/list switching worked, details scrolled, primary controls stayed visible, and there was no horizontal page overflow. Covered lists did not accept keyboard focus. |
-| embed=1 | Simplified header; standalone URLs omitted embed, and permanent archive URLs omitted embed/return parameters. |
-| Basemap failure | A temporary nonexistent local style URL produced retry/list guidance. Herndon remained searchable and his archive readable. The normal basemap was restored before rebuilding. |
-| Equivalent zoom reflow | A 538 × 402 CSS viewport approximated the narrow layout of the original roughly 1076 × 804 viewport at 200% zoom. |
+| Scenario                     | Observed result                                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Search Lewis                 | List, count, and places narrowed together to John Lewis; empty results offered a clear-filters action.                                                                         |
+| Enterprise theme             | Only Alonzo Herndon appeared, with matching filtered map places.                                                                                                               |
+| Keyboard Enter / Escape      | Opened the person preview, moved focus into the panel, and restored the trigger after closing. Map points were focusable buttons.                                              |
+| Cemetery / Atlanta switching | Preserved the selected person while changing the associated places; a new selection moved the camera.                                                                          |
+| Archive pages and sources    | Direct person URLs, numbered source anchors, and original-source links worked. Returning preserved search, scope, person, and camera.                                          |
+| City overview                | Three places clustered into a circle labeled 3, expanding on zoom; attribution stayed visible.                                                                                 |
+| Mobile 390 × 844             | Map/list switching worked, details scrolled, primary controls stayed visible, and there was no horizontal page overflow. Covered lists did not accept keyboard focus.          |
+| embed=1                      | Simplified header; standalone URLs omitted embed, and permanent archive URLs omitted embed/return parameters.                                                                  |
+| Basemap failure              | A temporary nonexistent local style URL produced retry/list guidance. Herndon remained searchable and his archive readable. The normal basemap was restored before rebuilding. |
+| Equivalent zoom reflow       | A 538 × 402 CSS viewport approximated the narrow layout of the original roughly 1076 × 804 viewport at 200% zoom.                                                              |
 
 ## Shared-navigation checks · 2026-10-07
 

@@ -147,7 +147,7 @@
   padding: 10px 16px;
 }
 .map-explorer .collection-heading h2 {
-  font-size: 11px;
+  font-size: 12px;
 }
 .map-explorer .people-results {
   min-height: 0;
@@ -235,7 +235,7 @@
   min-width: 0;
 }
 .map-explorer .detail-person .theme-label {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
   letter-spacing: 0.6px;
 }
@@ -384,11 +384,12 @@
 .map-explorer .map-caption {
   left: 16px;
   bottom: 30px;
-  font-size: 11px;
-  padding: 5px 9px;
+  font-size: 12px;
+  padding: 6px 10px;
   border-radius: 6px;
   max-width: none;
-  gap: 6px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .map-explorer .cemetery-key {
   display: inline-block;
@@ -469,6 +470,34 @@
 }
 .map-explorer .map-marker:hover .marker-pin-body {
   fill: #4b2530;
+}
+.map-explorer .map-marker.is-atlanta .marker-pin-body {
+  fill: var(--place);
+}
+.map-explorer .map-marker.is-atlanta:hover .marker-pin-body {
+  fill: #35402d;
+}
+.map-explorer .map-marker.is-selected .marker-pin-body {
+  fill: #302d28;
+}
+.map-explorer .legend-pin {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  background: var(--wine);
+  border-radius: 50%;
+}
+.map-explorer .legend-pin-place {
+  background: var(--place);
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.85);
+}
+.map-explorer .map-caption > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .map-explorer .map-marker.is-selected {
   z-index: 3;
@@ -564,8 +593,9 @@
   .map-explorer .map-caption {
     left: 12px;
     bottom: 91px;
-    padding: 4px 7px;
-    font-size: 10px;
+    padding: 4px 8px;
+    font-size: 11px;
+    gap: 8px;
   }
   .map-explorer.has-selection .map-caption {
     display: none;
@@ -616,4 +646,8 @@
   .map-explorer *::after {
     scroll-behavior: auto;
   }
+}
+.map-explorer .detail-edit-hint {
+  margin: 8px 0 4px;
+  font-size: 13px;
 }

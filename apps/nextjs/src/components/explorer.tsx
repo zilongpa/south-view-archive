@@ -32,6 +32,7 @@ import {
 } from '@southview/validators';
 import { viewportState } from '@/lib/map-scope';
 import { displayPersonName } from '@/lib/person-name';
+import { copy } from '@/lib/copy';
 import {
   createPreviewController,
   previewSelection,
@@ -379,14 +380,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         <span>{alphabetical ? 'A–Z' : 'Sort'}</span>
                       </button>
                     </div>
-                    <Link
-                      className="map-stories-link"
-                      href={`/stories?${new URLSearchParams({ q: state.q, theme: state.theme })}`}
-                      target={state.embed ? '_blank' : undefined}
-                      rel={state.embed ? 'noopener noreferrer' : undefined}
-                    >
-                      Search stories & photographs <ArrowUpRight size={15} aria-hidden="true" />
-                    </Link>
                   </div>
                   <div className="collection-heading">
                     <h2>The collection</h2>
@@ -688,12 +681,16 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   <div className="detail-bottom">
                     <Link
                       className="contribute-record"
-                      href={`/contribute?person=${selected.id}`}
+                      href={`/people/${selected.id}?edit=1&from=${encodeURIComponent(serializeExploreState(state))}`}
                       target={state.embed ? '_blank' : undefined}
                       rel={state.embed ? 'noopener noreferrer' : undefined}
                     >
-                      Share a memory or source <ArrowUpRight size={17} />
+                      {copy.addToPage} <ArrowUpRight size={17} />
                     </Link>
+                    <p className="quiet-note detail-edit-hint">
+                      Memories, photographs, places, and corrections are added on the profile page,
+                      right where they belong.
+                    </p>
                     <Link
                       className="full-record-link"
                       href={detailHref}

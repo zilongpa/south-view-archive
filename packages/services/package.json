@@ -5,7 +5,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./auth": "./src/auth.ts",
-    "./mail": "./src/mail.ts",
     "./storage": "./src/storage.ts",
     "./photos": "./src/photos.ts",
     "./upload-ticket": "./src/upload-ticket.ts",
@@ -25,13 +24,11 @@
     "@southview/validators": "workspace:*",
     "better-auth": "1.7.7",
     "drizzle-orm": "0.45.3",
-    "nodemailer": "10.0.14",
     "openai": "7.38.0",
     "sharp": "0.35.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/nodemailer": "8.0.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   }

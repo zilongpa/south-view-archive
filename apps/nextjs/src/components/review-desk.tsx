@@ -701,17 +701,6 @@ function ReviewEditor({
                   }}
                 />
               </details>
-              <label className="community-check">
-                <input
-                  type="checkbox"
-                  checked={draft.featured}
-                  onChange={(event) => edit('featured', event.target.checked)}
-                />
-                <span>
-                  Include in Editor’s selections when published. Personal memories keep their
-                  Community memory label.
-                </span>
-              </label>
               <label className="community-field">
                 <span>Public text</span>
                 <textarea
@@ -1136,7 +1125,7 @@ function ReviewEditor({
                   ? 'The published entry and its approved photographs will leave public view. The original and review history are retained.'
                   : action === 'reject'
                     ? 'The submission will remain private. Explain the decision to the contributor.'
-                    : 'Tell the contributor what to add through their private receipt page.'}
+                    : 'The contributor is not emailed. They see this message the next time they open their private receipt page or account, and the submission returns to review when they reply.'}
               </p>
             )}
             <label className="community-field">
@@ -1149,7 +1138,7 @@ function ReviewEditor({
                 onChange={(event) => edit('authorMessage', event.target.value)}
                 placeholder="Explain your decision and any information that would help."
               />
-              <small>The contributor can read this message on their private receipt page.</small>
+              <small>Shown only on the contributor’s private receipt page; no email is sent.</small>
             </label>
             <label className="community-field">
               <span>Internal review note</span>

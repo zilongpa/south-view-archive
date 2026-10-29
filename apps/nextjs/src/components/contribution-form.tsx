@@ -10,6 +10,7 @@ import {
   ImagePlus,
   LoaderCircle,
   LockKeyhole,
+  Plus,
   Sprout,
   Trash2,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { StoryContextFields } from './story-context-fields';
 import { RecordPicker } from './record-picker';
 import type { RecordOption } from '@/lib/record-options';
 import { restoreDraftEventDate } from '@/lib/story-context';
+import { copy } from '@/lib/copy';
 import {
   communityRequest,
   uploadCommunityPhoto,
@@ -46,6 +48,29 @@ type PhotoDraft = {
   metadata: Omit<PhotoMetadata, 'permission'> & { permission: boolean };
   uploadedId?: string;
 };
+type DraftLink = { title: string; url: string };
+function restoreLinks(value: unknown): DraftLink[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (item): item is DraftLink =>
+        !!item &&
+        typeof item === 'object' &&
+        typeof (item as DraftLink).title === 'string' &&
+        typeof (item as DraftLink).url === 'string',
+    )
+    .slice(0, 10);
+}
+/** Which provenance fields make sense for each kind of story. */
+const provenanceFields: Record<
+  SubmissionInput['kind'],
+  ('sourceCreator' | 'narrator' | 'holdingInstitution')[]
+> = {
+  memory: ['narrator'],
+  addition: ['sourceCreator', 'narrator', 'holdingInstitution'],
+  correction: ['sourceCreator', 'holdingInstitution'],
+  'new-person': ['sourceCreator', 'narrator', 'holdingInstitution'],
+};
 type Draft = {
   kind: SubmissionInput['kind'];
   personId: string;
@@ -53,7 +78,7 @@ type Draft = {
   title: string;
   body: string;
   context: string;
-  links: string;
+  links: DraftLink[];
   anonymous: boolean;
   displayName: string;
   clientRequestId: string;
@@ -100,13 +125,13 @@ export function ContributionForm({
   initialPersonId?: string;
 }) {
   const [draft, setDraft] = useState<Draft>({
-    kind: 'memory',
+    kind: 'new-person',
     personId: initialPersonId ?? '',
     proposedPersonName: '',
     title: '',
     body: '',
     context: '',
-    links: '',
+    links: [],
     anonymous: false,
     displayName: '',
     clientRequestId: '',
@@ -125,9 +150,13 @@ export function ContributionForm({
   const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [phase, setPhase] = useState<'write' | 'preview' | 'sending'>('write');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [storageReady, setStorageReady] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [earlierReceipt, setEarlierReceipt] = useState('');
+  // Once a story is sent, the debounced draft save must not write it back for the next visit.
+  const finished = useRef(false);
   const [session, setSession] = useState<CommunitySession | null>(null);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
@@ -188,8 +217,29 @@ export function ContributionForm({
         receiptToken,
       );
       if (result.submission.status !== 'draft') {
+        // The earlier story was already sent: start fresh instead of bouncing to its receipt.
+        finished.current = true;
         sessionStorage.removeItem(draftKey);
-        window.location.assign(submissionReceiptUrl(id, receiptToken));
+        setEarlierReceipt(submissionReceiptUrl(id, receiptToken));
+        setRestored(false);
+        setDraft((previous) => ({
+          ...previous,
+          title: '',
+          body: '',
+          context: '',
+          proposedPersonName: '',
+          links: [],
+          sourceCreator: '',
+          narrator: '',
+          holdingInstitution: '',
+          savedSubmissionId: '',
+          relatedPersonIds: [],
+          placeIds: [],
+          eventDate: { kind: 'unknown' },
+          clientRequestId: crypto.randomUUID(),
+          receiptToken: crypto.randomUUID() + crypto.randomUUID(),
+        }));
+        finished.current = false;
         return;
       }
       await restoreSavedPhotos(result.submission, receiptToken);
@@ -218,7 +268,6 @@ export function ContributionForm({
             'title',
             'body',
             'context',
-            'links',
             'displayName',
             'sourceCreator',
             'narrator',
@@ -232,8 +281,9 @@ export function ContributionForm({
                 .filter((key) => typeof candidate[key] === 'string')
                 .map((key) => [key, candidate[key]]),
             ),
-            kind: kinds.some((kind) => kind.value === candidate.kind) ? candidate.kind! : 'memory',
+            kind: 'new-person',
             anonymous: candidate.anonymous === true,
+            links: restoreLinks(candidate.links),
             relatedPersonIds: linkedRecordIdsSchema.catch([]).parse(candidate.relatedPersonIds),
             placeIds: linkedRecordIdsSchema.catch([]).parse(candidate.placeIds),
             eventDate: restoreDraftEventDate(candidate.eventDate),
@@ -274,8 +324,9 @@ export function ContributionForm({
   }, []);
 
   useEffect(() => {
-    if (!storageReady) return;
+    if (!storageReady || finished.current) return;
     const timer = setTimeout(() => {
+      if (finished.current) return;
       try {
         sessionStorage.setItem(draftKey, JSON.stringify(draft));
         setDraftSaved(true);
@@ -292,7 +343,15 @@ export function ContributionForm({
   function change<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((previous) => ({ ...previous, [key]: value }));
     setDraftSaved(false);
+    if (fieldErrors[key]) setFieldErrors(({ [key]: _cleared, ...rest }) => rest);
   }
+  const fieldClass = (name: string) => `community-field${fieldErrors[name] ? ' has-error' : ''}`;
+  const FieldError = ({ name }: { name: string }) =>
+    fieldErrors[name] ? (
+      <small className="community-field-error" role="alert">
+        {fieldErrors[name]}
+      </small>
+    ) : null;
   function inputValue(): SubmissionInput {
     return {
       ...draft,
@@ -303,15 +362,8 @@ export function ContributionForm({
       email: email.trim(),
       permission: true,
       links: draft.links
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const separator = line.indexOf('|');
-          return separator < 0
-            ? { title: line, url: line }
-            : { title: line.slice(0, separator).trim(), url: line.slice(separator + 1).trim() };
-        }),
+        .map((link) => ({ title: link.title.trim() || link.url.trim(), url: link.url.trim() }))
+        .filter((link) => link.url),
     };
   }
   function validate() {
@@ -321,9 +373,16 @@ export function ContributionForm({
     }
     const result = submissionInputSchema.safeParse(inputValue());
     if (!result.success) {
-      setError(result.error.issues.map((issue) => issue.message).join(' '));
+      const errors: Record<string, string> = {};
+      for (const issue of result.error.issues) {
+        const key = String(issue.path[0] ?? 'form');
+        errors[key] ??= issue.message;
+      }
+      setFieldErrors(errors);
+      setError('Please check the highlighted fields below.');
       return null;
     }
+    setFieldErrors({});
     for (const photo of photos) {
       const checked = photoMetadataSchema.safeParse(photo.metadata);
       if (!checked.success) {
@@ -451,6 +510,7 @@ export function ContributionForm({
         draft.receiptToken,
       );
       if (saved.submission.status !== 'draft') {
+        finished.current = true;
         try {
           sessionStorage.removeItem(draftKey);
         } catch {
@@ -491,12 +551,13 @@ export function ContributionForm({
           ),
         );
       }
-      setProgress('Submitting for review…');
+      setProgress('Sending for review…');
       await communityRequest(
         `/submissions/${encodeURIComponent(created.id)}/submit`,
         { method: 'POST' },
         draft.receiptToken,
       );
+      finished.current = true;
       try {
         sessionStorage.removeItem(draftKey);
       } catch {
@@ -538,6 +599,12 @@ export function ContributionForm({
             storage is configured.
           </CommunityNotice>
         )}
+        {earlierReceipt && (
+          <CommunityNotice title="Your earlier story was already sent">
+            This form is now empty for a new story.{' '}
+            <Link href={earlierReceipt}>Open the private receipt of the earlier one</Link>.
+          </CommunityNotice>
+        )}
         {restored && phase === 'write' && (
           <CommunityNotice title="Your draft text is here">
             We restored your text from this browser tab. Please re-enter your private contact
@@ -574,34 +641,12 @@ export function ContributionForm({
           </CommunityNotice>
         )}
         {phase === 'write' ? (
-          <form className="community-form" onSubmit={preview}>
+          <form className="community-form" onSubmit={preview} noValidate>
+            <p className="community-legend">{copy.requiredLegend}</p>
             <section className="community-section">
               <div className="community-section-heading">
                 <span className="community-step">01</span>
-                <h2>What would you like to share?</h2>
-              </div>
-              <div className="community-choice-grid">
-                {kinds.map((kind) => (
-                  <label className="community-choice" key={kind.value}>
-                    <input
-                      type="radio"
-                      name="contribution-kind"
-                      value={kind.value}
-                      checked={draft.kind === kind.value}
-                      onChange={() => change('kind', kind.value)}
-                    />
-                    <span>
-                      <strong>{kind.title}</strong>
-                      <small>{kind.text}</small>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </section>
-            <section className="community-section">
-              <div className="community-section-heading">
-                <span className="community-step">02</span>
-                <h2>A person. A story. A connection.</h2>
+                <h2>Who are you adding, and what do you know?</h2>
               </div>
               <div className="community-fields">
                 {draft.kind !== 'new-person' && (
@@ -615,7 +660,7 @@ export function ContributionForm({
                   />
                 )}
                 {(draft.kind === 'new-person' || !draft.personId) && (
-                  <label className="community-field">
+                  <label className={fieldClass('proposedPersonName')}>
                     <span>
                       Person’s name <span className="community-required">*</span>
                     </span>
@@ -624,16 +669,18 @@ export function ContributionForm({
                       onChange={(event) => change('proposedPersonName', event.target.value)}
                       required
                       maxLength={160}
+                      placeholder="e.g. Mary Johnson"
                     />
+                    <FieldError name="proposedPersonName" />
                     <small>
                       Use the name you know. Reviewers can help with name variations and
                       identification.
                     </small>
                   </label>
                 )}
-                <label className="community-field">
+                <label className={fieldClass('title')}>
                   <span>
-                    Give your contribution a title <span className="community-required">*</span>
+                    Title <span className="community-required">*</span>
                   </span>
                   <input
                     value={draft.title}
@@ -641,14 +688,17 @@ export function ContributionForm({
                     required
                     minLength={3}
                     maxLength={160}
-                    placeholder="A few words to introduce your story"
+                    placeholder="e.g. Sunday visits to the family plot"
                   />
+                  <FieldError name="title" />
                 </label>
-                <label className="community-field">
+                <label className={fieldClass('body')}>
                   <span>
                     {draft.kind === 'correction'
                       ? 'What needs correcting, and what should it say?'
-                      : 'Your story or contribution'}{' '}
+                      : draft.kind === 'memory'
+                        ? 'Your memory'
+                        : 'Your story or contribution'}{' '}
                     <span className="community-required">*</span>
                   </span>
                   <textarea
@@ -660,19 +710,22 @@ export function ContributionForm({
                     rows={9}
                     placeholder="Tell it in your own words. What do you remember, or what would you like others to know?"
                   />
+                  <FieldError name="body" />
                   <small>
-                    {draft.body.length.toLocaleString()} / 20,000 characters. Personal recollections
-                    are welcome as recollections.
+                    {draft.body.length.toLocaleString()} / 20,000 characters. A memory can be
+                    personal; it does not need to be proven.
                   </small>
                 </label>
                 <label className="community-field">
-                  <span>How do you know this story?</span>
+                  <span>
+                    How do you know this story? <span className="community-hint">(optional)</span>
+                  </span>
                   <textarea
                     value={draft.context}
                     onChange={(event) => change('context', event.target.value)}
                     maxLength={4000}
                     rows={3}
-                    placeholder="Your connection to this person, how you learned this, or where the material came from."
+                    placeholder="e.g. She was my great-aunt; my mother told me this at family reunions."
                   />
                   <small>
                     This context helps readers understand the perspective behind the contribution.
@@ -695,61 +748,137 @@ export function ContributionForm({
                     }}
                   />
                 </details>
-                <div className="community-two-columns">
-                  <label className="community-field">
-                    <span>Original author or creator (if different)</span>
-                    <input
-                      value={draft.sourceCreator}
-                      onChange={(event) => change('sourceCreator', event.target.value)}
-                      maxLength={200}
-                    />
-                    <small>Who originally wrote, created, or recorded this material?</small>
-                  </label>
-                  <label className="community-field">
-                    <span>Narrator or person remembering</span>
-                    <input
-                      value={draft.narrator}
-                      onChange={(event) => change('narrator', event.target.value)}
-                      maxLength={200}
-                    />
-                    <small>For an account told by somebody other than you.</small>
-                  </label>
-                </div>
-                <label className="community-field">
-                  <span>Holding institution or collection</span>
-                  <input
-                    value={draft.holdingInstitution}
-                    onChange={(event) => change('holdingInstitution', event.target.value)}
-                    maxLength={200}
-                    placeholder="Library, archive, or family collection, if applicable"
-                  />
-                </label>
-                <label className="community-field">
-                  <span>
-                    Related sources or links <span className="community-hint">(optional)</span>
-                  </span>
-                  <textarea
-                    value={draft.links}
-                    onChange={(event) => change('links', event.target.value)}
-                    rows={3}
-                    placeholder={
-                      'Collection or document title | https://example.org/record\nOne source per line'
-                    }
-                  />
-                  <small>
-                    Up to 10 links. A memory does not need a written source to be submitted as a
-                    memory.
-                  </small>
-                </label>
+                <details
+                  className="story-context-details"
+                  open={draft.kind !== 'memory'}
+                  key={`provenance-${draft.kind}`}
+                >
+                  <summary>
+                    Where this came from <span className="community-hint">(optional)</span>
+                  </summary>
+                  <div className="community-fields" style={{ margin: '16px 0' }}>
+                    {provenanceFields[draft.kind].includes('sourceCreator') && (
+                      <label className="community-field">
+                        <span>
+                          Original author or creator{' '}
+                          <span className="community-hint">(optional)</span>
+                        </span>
+                        <input
+                          value={draft.sourceCreator}
+                          onChange={(event) => change('sourceCreator', event.target.value)}
+                          maxLength={200}
+                          placeholder="e.g. Atlanta Daily World, 1952"
+                        />
+                        <small>Who originally wrote, created, or recorded this material?</small>
+                      </label>
+                    )}
+                    {provenanceFields[draft.kind].includes('narrator') && (
+                      <label className="community-field">
+                        <span>
+                          Who is remembering? <span className="community-hint">(optional)</span>
+                        </span>
+                        <input
+                          value={draft.narrator}
+                          onChange={(event) => change('narrator', event.target.value)}
+                          maxLength={200}
+                          placeholder="e.g. My grandmother, Ruth Hill"
+                        />
+                        <small>Only if the account was told by somebody other than you.</small>
+                      </label>
+                    )}
+                    {provenanceFields[draft.kind].includes('holdingInstitution') && (
+                      <label className="community-field">
+                        <span>
+                          Where the material is kept{' '}
+                          <span className="community-hint">(optional)</span>
+                        </span>
+                        <input
+                          value={draft.holdingInstitution}
+                          onChange={(event) => change('holdingInstitution', event.target.value)}
+                          maxLength={200}
+                          placeholder="e.g. Auburn Avenue Research Library, or a family album"
+                        />
+                      </label>
+                    )}
+                    <div className={fieldClass('links')}>
+                      <span>
+                        Links to sources <span className="community-hint">(optional)</span>
+                      </span>
+                      {draft.links.map((link, index) => (
+                        <div className="community-link-row" key={index}>
+                          <input
+                            aria-label={`Link ${index + 1} title`}
+                            value={link.title}
+                            maxLength={200}
+                            placeholder="What is it? e.g. Obituary, 1968"
+                            onChange={(event) =>
+                              change(
+                                'links',
+                                draft.links.map((item, i) =>
+                                  i === index ? { ...item, title: event.target.value } : item,
+                                ),
+                              )
+                            }
+                          />
+                          <input
+                            aria-label={`Link ${index + 1} address`}
+                            type="url"
+                            inputMode="url"
+                            value={link.url}
+                            placeholder="https://"
+                            onChange={(event) =>
+                              change(
+                                'links',
+                                draft.links.map((item, i) =>
+                                  i === index ? { ...item, url: event.target.value } : item,
+                                ),
+                              )
+                            }
+                          />
+                          <button
+                            className="community-text-button"
+                            type="button"
+                            aria-label={`Remove link ${index + 1}`}
+                            onClick={() =>
+                              change(
+                                'links',
+                                draft.links.filter((_, i) => i !== index),
+                              )
+                            }
+                          >
+                            <Trash2 size={15} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                      <FieldError name="links" />
+                      {draft.links.length < 10 && (
+                        <button
+                          className="community-text-button"
+                          type="button"
+                          onClick={() => change('links', [...draft.links, { title: '', url: '' }])}
+                        >
+                          <Plus size={15} aria-hidden="true" /> Add a link
+                        </button>
+                      )}
+                      <small>
+                        A web page, catalogue record, or article that supports this story. A memory
+                        does not need one.
+                      </small>
+                    </div>
+                  </div>
+                </details>
               </div>
             </section>
             <section className="community-section">
               <div className="community-section-heading">
-                <span className="community-step">03</span>
-                <h2>Photographs, with their story</h2>
+                <span className="community-step">02</span>
+                <h2>
+                  Photographs <span className="community-hint">(optional)</span>
+                </h2>
               </div>
               <p className="community-section-note">
-                Optional. Up to five JPEG, PNG, or WebP images, no more than 10 MB each.
+                Up to five JPEG, PNG, or WebP images, no more than 10 MB each. Each photograph needs
+                a caption, a creator, and your permission.
               </p>
               <div className="community-upload">
                 <ImagePlus size={30} strokeWidth={1.3} />
@@ -789,6 +918,7 @@ export function ContributionForm({
                           onChange={(event) => updatePhoto(index, { caption: event.target.value })}
                           required
                           maxLength={500}
+                          placeholder="e.g. The Hill family at the South-View gate, about 1960"
                         />
                       </label>
                       <label className="community-field">
@@ -799,7 +929,7 @@ export function ContributionForm({
                           onChange={(event) => updatePhoto(index, { creator: event.target.value })}
                           required
                           maxLength={160}
-                          placeholder="Name, family collection, or unknown"
+                          placeholder="e.g. Ruth Hill, or “family collection”, or “unknown”"
                         />
                       </label>
                       <label className="community-field">
@@ -810,7 +940,7 @@ export function ContributionForm({
                           onChange={(event) => updatePhoto(index, { rights: event.target.value })}
                           required
                           maxLength={1000}
-                          placeholder="Who owns it, and how may it be used?"
+                          placeholder="e.g. Owned by our family; South-View may display it online"
                         />
                       </label>
                       <label className="community-check" style={{ marginTop: 14 }}>
@@ -840,37 +970,50 @@ export function ContributionForm({
             </section>
             <section className="community-section">
               <div className="community-section-heading">
-                <span className="community-step">04</span>
-                <h2>How should we credit you?</h2>
+                <span className="community-step">03</span>
+                <h2>Your name and your public credit</h2>
               </div>
               <div className="community-fields">
                 <div className="community-two-columns">
-                  <label className="community-field">
+                  <label className={fieldClass('privateName')}>
                     <span>
                       Your name <span className="community-required">*</span>
                     </span>
                     <input
                       value={privateName}
-                      onChange={(event) => setPrivateName(event.target.value)}
+                      onChange={(event) => {
+                        setPrivateName(event.target.value);
+                        if (fieldErrors.privateName)
+                          setFieldErrors(({ privateName: _c, ...rest }) => rest);
+                      }}
+                      placeholder="e.g. Ruth Hill"
                       required
                       minLength={2}
                       maxLength={160}
                       autoComplete="name"
                     />
+                    <FieldError name="privateName" />
                     <small>Private. Used by the review team.</small>
                   </label>
-                  <label className="community-field">
+                  <label className={fieldClass('email')}>
                     <span>
                       Email address <span className="community-required">*</span>
                     </span>
                     <input
                       type="email"
                       value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        if (fieldErrors.email) setFieldErrors(({ email: _c, ...rest }) => rest);
+                      }}
+                      placeholder="e.g. ruth@example.org"
                       required
                       autoComplete="email"
                     />
-                    <small>Private. For your receipt and review updates.</small>
+                    <FieldError name="email" />
+                    <small>
+                      Private. Reviewers may use it to reach you; the archive itself sends no email.
+                    </small>
                   </label>
                 </div>
                 <label className="community-check">
@@ -885,7 +1028,7 @@ export function ContributionForm({
                   </span>
                 </label>
                 {!draft.anonymous && (
-                  <label className="community-field">
+                  <label className={fieldClass('displayName')}>
                     <span>
                       Public display name <span className="community-required">*</span>
                     </span>
@@ -894,8 +1037,9 @@ export function ContributionForm({
                       onChange={(event) => change('displayName', event.target.value)}
                       required
                       maxLength={160}
-                      placeholder="The name readers will see"
+                      placeholder="e.g. The Hill family, or R. Hill"
                     />
+                    <FieldError name="displayName" />
                     <small>Only this name appears in the public contributor credit.</small>
                   </label>
                 )}
@@ -903,7 +1047,7 @@ export function ContributionForm({
             </section>
             <div className="community-actions">
               <button className="community-primary" type="submit">
-                Review my contribution <ArrowRight size={17} />
+                {copy.reviewStory} <ArrowRight size={17} />
               </button>
               <span className="community-draft">
                 {draftSaved && <Check size={14} />}
@@ -960,10 +1104,13 @@ export function ContributionForm({
                 {draft.context}
               </div>
             )}
-            {draft.links && (
+            {draft.links.some((link) => link.url.trim()) && (
               <div className="community-review-line">
-                <strong>Related sources</strong>
-                {draft.links}
+                <strong>Links to sources</strong>
+                {draft.links
+                  .filter((link) => link.url.trim())
+                  .map((link) => link.title.trim() || link.url.trim())
+                  .join('; ')}
               </div>
             )}
             {draft.sourceCreator && (
@@ -1012,6 +1159,7 @@ export function ContributionForm({
               <strong>Private contact</strong>
               {privateName} · {email}
             </div>
+            <CommunityNotice title="No email will be sent">{copy.noEmail}</CommunityNotice>
             <label className="community-check" style={{ marginTop: 25 }}>
               <input
                 type="checkbox"
@@ -1044,11 +1192,11 @@ export function ContributionForm({
                 {phase === 'sending' ? (
                   <>
                     <LoaderCircle size={17} className="community-spinner" />{' '}
-                    {progress || 'Sending your contribution…'}
+                    {progress || copy.sending}
                   </>
                 ) : (
                   <>
-                    Send for review <ArrowRight size={17} />
+                    {copy.sendStory} <ArrowRight size={17} />
                   </>
                 )}
               </button>
@@ -1077,8 +1225,9 @@ export function ContributionForm({
           </p>
           <ol>
             <li>Share what you know, in your own words.</li>
-            <li>Reviewers may ask for more context.</li>
-            <li>Approved contributions join the archive with clear credit.</li>
+            <li>Save the private link shown after sending; it is your only receipt.</li>
+            <li>Reviewers may ask for more context on that page.</li>
+            <li>Approved stories join the archive with clear credit.</li>
           </ol>
         </div>
         <div className="community-aside-card">

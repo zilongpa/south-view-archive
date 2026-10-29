@@ -5,9 +5,7 @@ export type CommunitySession = {
   user: { id: string; name: string; email: string } | null;
   reviewer: boolean;
   mode: string;
-  authAvailable: boolean;
-  signInMethods: { emailOtp: boolean; google: boolean };
-  mailMode?: 'local' | 'smtp' | 'disabled';
+  signInMethods: { google: boolean };
 };
 export class CommunityRequestError extends Error {
   constructor(
@@ -67,6 +65,17 @@ export function receiptFor(id: string): string | undefined {
   } catch {
     return receipt ?? undefined;
   }
+}
+
+/** Other submissions sent together with this one, listed in the private fragment as `also`. */
+export function alsoFor(): string[] {
+  if (typeof window === 'undefined') return [];
+  const also = new URLSearchParams(window.location.hash.slice(1)).get('also') ?? '';
+  return also
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => /^[a-zA-Z0-9_-]{1,80}$/.test(id))
+    .slice(0, 20);
 }
 
 export function submissionReceiptUrl(id: string, token: string) {

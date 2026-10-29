@@ -35,6 +35,7 @@ import {
   vetLabels,
 } from '@/lib/review-state';
 import { PrivateSubmissionPhoto } from './submission-manager';
+import { sectionLabel } from '@/lib/person-edit';
 
 export function ReviewStats({
   items,
@@ -442,6 +443,20 @@ export function OriginalSubmission({
               .join('; ') || 'None supplied'}
           </dd>
         </div>
+        {record.input.placement && (
+          <div>
+            <dt>Requested placement</dt>
+            <dd>
+              {sectionLabel(record.input.placement.section)}
+              {record.input.placement.blockId
+                ? ` · ${record.input.kind === 'correction' ? 'correcting' : 'after'} paragraph ${record.input.placement.blockId}`
+                : ''}
+              {record.input.placement.proposedPlaceName
+                ? ` · new place: ${record.input.placement.proposedPlaceName}`
+                : ''}
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Context</dt>
           <dd>{record.input.context || 'None supplied'}</dd>

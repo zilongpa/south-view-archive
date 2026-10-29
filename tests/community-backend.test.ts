@@ -22,8 +22,6 @@ import {
   getPublicPhoto,
   getPublicContribution,
   consumeRateLimit,
-  setMailStatus,
-  claimReceiptMail,
 } from '../packages/db/src/community';
 import {
   submissionInputSchema,
@@ -156,10 +154,6 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         await attachPhoto(created.submission.id, attached, author);
         await finalizeSubmission(created.submission.id, author);
         await finalizeSubmission(created.submission.id, author);
-        const receiptClaims = await Promise.all(
-          Array.from({ length: 5 }, () => claimReceiptMail(created.submission.id)),
-        );
-        assert.equal(receiptClaims.filter(Boolean).length, 1);
         await assert.rejects(updateDraft(created.submission.id, input, author), {
           code: 'CONFLICT',
         });
@@ -358,17 +352,6 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         await assert.rejects(
           claimSubmission(submission.id, { ...owner, userId: 'other-account' }),
           { code: 'CONFLICT' },
-        );
-        await setMailStatus(submission.id, 'failed');
-        await setMailStatus(submission.id, 'outbox');
-        assert.equal((await getSubmission(submission.id, owner)).mailStatus, 'outbox');
-        assert.equal(
-          (
-            await store.query('SELECT id FROM community.mail_events WHERE submission_id=$1', [
-              submission.id,
-            ])
-          ).rows.length,
-          2,
         );
         const limits = await Promise.all(
           Array.from({ length: 12 }, () => consumeRateLimit('private-ip-and-email', 3, 60000)),

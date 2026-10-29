@@ -5,8 +5,13 @@
   --paper: #f7f4ed;
   --surface: #fffcf6;
   --ink: #302d28;
-  --muted: #726e64;
+  /* 6.2:1 on paper; the previous #726e64 only reached 4.6:1 and was used at 10px. */
+  --muted: #5f5b52;
   --line: #ded9cd;
+  /* Form-control and hairline borders need 3:1 against paper (WCAG 1.4.11). */
+  --control-border: #8c806d;
+  /* Related places on the map; distinct from the wine grave markers for colour-blind readers. */
+  --place: #4f5a46;
   --wine: #743444;
   --wine-light: #f2e5e4;
   --sage: #646e59;
@@ -122,9 +127,9 @@ svg {
 .eyebrow,
 .archive-eyebrow {
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
-  letter-spacing: 1.9px;
+  letter-spacing: 1.4px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -533,8 +538,8 @@ svg {
   letter-spacing: -0.4px;
 }
 .person-years {
-  font-size: 10px;
-  letter-spacing: 0.6px;
+  font-size: 12px;
+  letter-spacing: 0.4px;
   color: var(--muted);
   margin-top: 5px;
 }
@@ -542,8 +547,8 @@ svg {
   color: #9f9687;
 }
 .card-summary {
-  font-size: 12px;
-  color: #716b61;
+  font-size: 13px;
+  color: var(--muted);
   line-height: 1.6;
   margin-top: 11px;
   display: -webkit-box;
@@ -559,13 +564,13 @@ svg {
   margin-top: 12px;
 }
 .theme-label {
-  font-size: 9px;
-  letter-spacing: 0.6px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
   color: var(--wine);
   text-transform: uppercase;
 }
 .card-meta > span:last-child {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -634,7 +639,7 @@ svg {
   letter-spacing: -0.5px;
 }
 .map-place-heading > p:last-child {
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 8px;
   color: var(--muted);
 }
@@ -694,9 +699,9 @@ svg {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 12px;
   z-index: 2;
-  color: #60584c;
+  color: var(--muted);
   border-radius: 2px;
 }
 .legend-dot {
@@ -712,7 +717,7 @@ svg {
 .maplibregl-ctrl-attrib {
   background: #fffaf0e8 !important;
   color: #5f5c55 !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   padding: 2px 8px !important;
   max-width: 100%;
   line-height: 1.7 !important;
@@ -851,7 +856,7 @@ svg {
   line-height: 1.7;
 }
 .preview-hint {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--wine);
   display: flex;
   align-items: center;
@@ -866,7 +871,7 @@ svg {
   gap: 12px;
   padding: 0 19px;
   border-top: 1px solid var(--line);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
 }
 .atlas-footer > span:first-child {
@@ -897,11 +902,11 @@ svg {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  font-size: 10px;
-  color: #837b6d;
+  font-size: 12px;
+  color: var(--muted);
 }
 .site-footer > span {
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 1px;
 }
 .footer-divider {
@@ -1311,6 +1316,11 @@ svg {
 .archive-back {
   color: var(--wine);
 }
+.archive-topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
 .archive-layout {
   display: grid;
   grid-template-columns: minmax(0, 800px) 260px;
@@ -1362,6 +1372,19 @@ svg {
   font-size: 31px;
   margin: 9px 0 20px;
   letter-spacing: -0.6px;
+}
+.archive-section > p:not(.archive-eyebrow) {
+  font-size: 17px;
+  line-height: 1.8;
+  margin: 0 0 18px;
+  max-width: 68ch;
+}
+.archive-section > p.archive-empty {
+  color: var(--muted);
+  margin: 26px 0 0;
+}
+.archive-section > .archive-button {
+  margin-top: 26px;
 }
 .archive-prose p {
   font-size: 18px;

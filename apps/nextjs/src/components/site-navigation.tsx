@@ -2,10 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ExternalLink, Menu } from 'lucide-react';
+import { ExternalLink, Menu, UserRound } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
+import { copy } from '@/lib/copy';
 import styles from './site-navigation.module.css';
 
+/**
+ * Three destinations only: the map, the contribution flow, and the visitor's own account.
+ * Record pages count as part of the map; receipt and sign-in pages count as the account.
+ */
 export function SiteNavigation({
   overlay = false,
   embed = false,
@@ -47,34 +52,34 @@ export function SiteNavigation({
 
   const active =
     pathname.startsWith('/people/') || pathname.startsWith('/contributions/')
-      ? '/stories'
+      ? '/explore'
       : pathname.startsWith('/submissions/') || pathname === '/sign-in'
         ? '/my-contributions'
         : pathname;
   const links = workspace
     ? [
         { href: '/explore', label: 'Back to archive' },
-        { href: '/my-contributions', label: 'My account' },
+        { href: '/my-contributions', label: copy.account, account: true },
       ]
     : [
-        { href: '/explore', label: 'Explore' },
-        { href: '/stories', label: 'Stories' },
-        { href: '/about', label: 'About' },
-        { href: '/contribute', label: 'Contribute' },
-        { href: '/my-contributions', label: 'My contributions' },
+        { href: '/explore', label: copy.explore },
+        { href: '/contribute', label: copy.share },
+        { href: '/my-contributions', label: copy.account, account: true },
       ];
-  const navigationLinks = links.map(({ href, label }) => (
+  const navigationLinks = links.map(({ href, label, account }) => (
     <Link
       key={href}
+      className={account ? styles.account : undefined}
       href={
-        href === '/contribute' && personId ? `${href}?person=${encodeURIComponent(personId)}` : href
+        href === '/contribute' && personId ? `/people/${encodeURIComponent(personId)}?edit=1` : href
       }
       aria-current={active === href ? 'page' : undefined}
       target={embed ? '_blank' : undefined}
       rel={embed ? 'noopener noreferrer' : undefined}
       onClick={closeMenu}
     >
-      {label}
+      {account && <UserRound size={18} aria-hidden="true" />}
+      <span>{label}</span>
     </Link>
   ));
 

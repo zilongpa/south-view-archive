@@ -324,10 +324,13 @@ export default function ArchiveMap(props: Props) {
         el.type = 'button';
         el.dataset.placeId = place.id;
         el.classList.add('map-marker');
+        // Grave markers and related city places use different colours and core shapes.
+        el.classList.toggle('is-cemetery', place.scope === 'cemetery');
+        el.classList.toggle('is-atlanta', place.scope !== 'cemetery');
         el.classList.toggle('is-selected', current.current.selectedPlaceId === place.id);
         el.setAttribute(
           'aria-label',
-          `${person.name} — ${place.name}. ${place.precision === 'reference' ? 'Reference location.' : ''}`,
+          `${person.name} — ${place.name}. ${place.scope === 'cemetery' ? 'Grave marker.' : 'Related place.'} ${place.precision === 'reference' ? 'Reference location.' : ''}`.trim(),
         );
         el.setAttribute('aria-pressed', String(current.current.selectedPlaceId === place.id));
         // Fixed geometry: the SVG's bottom tip is the Marker's bottom-centre anchor.
@@ -343,11 +346,22 @@ export default function ArchiveMap(props: Props) {
           const pin = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           pin.setAttribute('class', 'marker-pin-body');
           pin.setAttribute('d', 'M16 42C14 37 1 25 1 16A15 15 0 0 1 31 16C31 25 18 37 16 42Z');
-          const core = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          const core =
+            place.scope === 'cemetery'
+              ? document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+              : document.createElementNS('http://www.w3.org/2000/svg', 'rect');
           core.setAttribute('class', 'marker-pin-core');
-          core.setAttribute('cx', '16');
-          core.setAttribute('cy', '16');
-          core.setAttribute('r', '5');
+          if (place.scope === 'cemetery') {
+            core.setAttribute('cx', '16');
+            core.setAttribute('cy', '16');
+            core.setAttribute('r', '5');
+          } else {
+            core.setAttribute('x', '11.5');
+            core.setAttribute('y', '11.5');
+            core.setAttribute('width', '9');
+            core.setAttribute('height', '9');
+            core.setAttribute('transform', 'rotate(45 16 16)');
+          }
           svg.append(pin, core);
           el.append(svg);
           const label = document.createElement('span');
@@ -503,17 +517,24 @@ export default function ArchiveMap(props: Props) {
       >
         <LocateFixed size={18} aria-hidden="true" /> South-View
       </button>
-      <div className="map-caption">
-        <span className="cemetery-key" aria-hidden="true" />
-        <a
-          href={cemeteryArea.properties.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
-          title="Approximate cemetery outline from OpenStreetMap; not a surveyed property boundary."
-        >
-          South-View area
-        </a>
-        <span>· Reference graves</span>
+      <div className="map-caption" aria-label="Map legend">
+        <span>
+          <span className="legend-pin legend-pin-grave" aria-hidden="true" /> Grave marker
+        </span>
+        <span>
+          <span className="legend-pin legend-pin-place" aria-hidden="true" /> Related place
+        </span>
+        <span>
+          <span className="cemetery-key" aria-hidden="true" />{' '}
+          <a
+            href={cemeteryArea.properties.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Approximate cemetery outline from OpenStreetMap; not a surveyed property boundary."
+          >
+            South-View area
+          </a>
+        </span>
       </div>
     </div>
   );

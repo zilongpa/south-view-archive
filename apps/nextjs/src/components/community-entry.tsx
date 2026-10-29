@@ -3,7 +3,7 @@ import { ArrowLeft, BookOpen, CalendarDays, UserRound } from 'lucide-react';
 import { formatEventDate, type ArchiveData, type ContributionEntry } from '@southview/validators';
 import { CitationMarks, SourceList } from './citations';
 import { PhotoViewer } from './photo-viewer';
-import { withStoriesReturn } from '@/lib/stories-state';
+import { withArchiveReturn } from '@/lib/archive-return';
 
 const kindLabels = {
   memory: 'Community memory',
@@ -15,7 +15,7 @@ const kindLabels = {
 export function CommunityEntry({
   entry,
   archive,
-  returnTo = '/stories',
+  returnTo = '/explore',
 }: {
   entry: ContributionEntry;
   archive: ArchiveData;
@@ -43,8 +43,7 @@ export function CommunityEntry({
   return (
     <article>
       <Link className="community-text-button" href={returnTo}>
-        <ArrowLeft size={17} aria-hidden="true" />{' '}
-        {returnTo.startsWith('/stories') ? 'Back to stories' : 'Back to the map'}
+        <ArrowLeft size={17} aria-hidden="true" /> Back to the map
       </Link>
       <header className="community-entry-header">
         <p className="community-preview-label">{kindLabels[entry.kind]}</p>
@@ -63,7 +62,7 @@ export function CommunityEntry({
             {relatedPeople.map((related) => (
               <Link
                 key={related.id}
-                href={withStoriesReturn(`/people/${encodeURIComponent(related.id)}`, returnTo)}
+                href={withArchiveReturn(`/people/${encodeURIComponent(related.id)}`, returnTo)}
               >
                 {related.name}
               </Link>
@@ -140,7 +139,7 @@ export function CommunityEntry({
             width: photo.width,
             height: photo.height,
             entry: {
-              href: withStoriesReturn(`${path}#photo-${encodeURIComponent(photo.id)}`, returnTo),
+              href: withArchiveReturn(`${path}#photo-${encodeURIComponent(photo.id)}`, returnTo),
               label: 'View original contribution',
             },
           }))}
@@ -174,13 +173,12 @@ export function CommunityEntry({
       </section>
       <div className="community-actions">
         <Link className="community-secondary" href={returnTo}>
-          <ArrowLeft size={17} aria-hidden="true" />{' '}
-          {returnTo.startsWith('/stories') ? 'Back to stories' : 'Back to the map'}
+          <ArrowLeft size={17} aria-hidden="true" /> Back to the map
         </Link>
         {person && (
           <Link
             className="community-secondary"
-            href={withStoriesReturn(`/people/${encodeURIComponent(person.id)}`, returnTo)}
+            href={withArchiveReturn(`/people/${encodeURIComponent(person.id)}`, returnTo)}
           >
             <ArrowLeft size={17} aria-hidden="true" /> Back to {person.name}’s record
           </Link>

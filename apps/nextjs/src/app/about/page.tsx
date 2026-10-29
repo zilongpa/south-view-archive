@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteNavigation } from '@/components/site-navigation';
 import { ArrowLeft, ArrowUpRight } from 'lucide-react';
+import { copy } from '@/lib/copy';
 
 export const metadata: Metadata = {
   title: 'About the archive',
@@ -87,7 +88,7 @@ export default function AboutPage() {
             permanent links.
           </p>
           <Link className="archive-text-link" href="/contribute">
-            Contribute to the archive <ArrowUpRight size={17} />
+            {copy.share} <ArrowUpRight size={17} />
           </Link>
         </section>
         <Link className="archive-button" href="/explore">
