@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useDetailResize } from './detail-resize';
 import {
   ArrowDownUp,
   ArrowRight,
@@ -90,6 +91,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const [alphabetical, setAlphabetical] = useState(false);
   const detailRef = useRef<HTMLElement>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
+  const detailResize = useDetailResize();
   const triggerRef = useRef<HTMLElement | null>(null);
   const liveState = useRef(state);
   liveState.current = state;
@@ -290,6 +292,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   return (
     <div
       className={`explorer map-explorer ${state.embed ? 'is-embedded' : ''} ${showResults ? 'results-open' : ''} ${selected ? 'has-selection' : ''}`}
+      style={detailResize.style}
     >
       <SiteNavigation
         overlay
@@ -503,10 +506,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
               {selected && (
                 <aside
                   ref={detailRef}
-                  className="detail-panel"
+                  className={`detail-panel ${detailResize.panelClass}`}
                   tabIndex={-1}
                   aria-label={`${selected.name} preview`}
                 >
+                  {detailResize.handle}
                   <div className="detail-top">
                     <span className="eyebrow">FROM THE COLLECTION</span>
                     <button onClick={closeDetail} aria-label="Close person preview">

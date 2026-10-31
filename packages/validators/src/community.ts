@@ -33,7 +33,14 @@ export const placementSchema = z.object({
   section: z.enum(['biography', 'places', 'community', 'portrait']),
   /** Biography block id (or index) the addition follows or the correction concerns. */
   blockId: z.string().trim().max(120).optional(),
+  /** The paragraph text the contributor edited, so reviewers can compare and publication can match it. */
+  originalText: z.string().trim().max(20000).optional(),
   proposedPlaceName: z.string().trim().max(160).optional(),
+  proposedScope: z.enum(['cemetery', 'atlanta']).optional(),
+  /** A point the contributor marked on the map, longitude first. Reviewers confirm before publishing. */
+  proposedCoordinates: z
+    .tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)])
+    .optional(),
 });
 export type Placement = z.infer<typeof placementSchema>;
 const webUrl = z

@@ -27,6 +27,7 @@ import {
 import { CommunityNotice } from './community-shell';
 import { StoryContextFields } from './story-context-fields';
 import { RecordPicker } from './record-picker';
+import { LocationPicker } from './location-picker';
 import type { RecordOption } from '@/lib/record-options';
 import { restoreDraftEventDate } from '@/lib/story-context';
 import { copy } from '@/lib/copy';
@@ -62,15 +63,33 @@ function restoreLinks(value: unknown): DraftLink[] {
     .slice(0, 10);
 }
 /** Which provenance fields make sense for each kind of story. */
-const provenanceFields: Record<
-  SubmissionInput['kind'],
-  ('sourceCreator' | 'narrator' | 'holdingInstitution')[]
-> = {
-  memory: ['narrator'],
-  addition: ['sourceCreator', 'narrator', 'holdingInstitution'],
-  correction: ['sourceCreator', 'holdingInstitution'],
-  'new-person': ['sourceCreator', 'narrator', 'holdingInstitution'],
-};
+type SourceKind = 'memory' | 'account' | 'document';
+/** One plain question instead of a drawer of provenance fields; testers skipped the drawer. */
+const sourceKinds: { value: SourceKind; title: string; text: string }[] = [
+  {
+    value: 'memory',
+    title: 'My own memory, or our family’s',
+    text: 'You knew this person, or the story was passed down to you.',
+  },
+  {
+    value: 'account',
+    title: 'Someone else told me',
+    text: 'A relative, neighbour, or church member remembered it.',
+  },
+  {
+    value: 'document',
+    title: 'A document, article, or record',
+    text: 'An obituary, newspaper, programme, letter, or an archive’s catalogue.',
+  },
+];
+function restorePoint(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [lng, lat] = value;
+  if (typeof lng !== 'number' || typeof lat !== 'number') return null;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lng) > 180 || Math.abs(lat) > 85)
+    return null;
+  return [lng, lat];
+}
 type Draft = {
   kind: SubmissionInput['kind'];
   personId: string;
@@ -90,6 +109,10 @@ type Draft = {
   relatedPersonIds: string[];
   placeIds: string[];
   eventDate: EventDate;
+  /** A place the contributor named or marked on the map for this person. */
+  placeName: string;
+  placeScope: 'cemetery' | 'atlanta';
+  placeCoordinates: [number, number] | null;
 };
 const draftKey = 'south-view-contribution-draft-v1';
 const kinds: { value: SubmissionInput['kind']; title: string; text: string }[] = [
@@ -143,7 +166,11 @@ export function ContributionForm({
     relatedPersonIds: [],
     placeIds: [],
     eventDate: { kind: 'unknown' },
+    placeName: '',
+    placeScope: 'cemetery',
+    placeCoordinates: null,
   });
+  const [sourceKind, setSourceKind] = useState<SourceKind>('memory');
   const [privateName, setPrivateName] = useState('');
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState(false);
@@ -236,6 +263,9 @@ export function ContributionForm({
           relatedPersonIds: [],
           placeIds: [],
           eventDate: { kind: 'unknown' },
+          placeName: '',
+          placeScope: 'cemetery',
+          placeCoordinates: null,
           clientRequestId: crypto.randomUUID(),
           receiptToken: crypto.randomUUID() + crypto.randomUUID(),
         }));
@@ -287,6 +317,9 @@ export function ContributionForm({
             relatedPersonIds: linkedRecordIdsSchema.catch([]).parse(candidate.relatedPersonIds),
             placeIds: linkedRecordIdsSchema.catch([]).parse(candidate.placeIds),
             eventDate: restoreDraftEventDate(candidate.eventDate),
+            placeName: typeof candidate.placeName === 'string' ? candidate.placeName : '',
+            placeScope: candidate.placeScope === 'atlanta' ? 'atlanta' : 'cemetery',
+            placeCoordinates: restorePoint(candidate.placeCoordinates),
             clientRequestId:
               typeof candidate.clientRequestId === 'string'
                 ? candidate.clientRequestId
@@ -297,6 +330,14 @@ export function ContributionForm({
                 : crypto.randomUUID() + crypto.randomUUID(),
           }));
           setRestored(true);
+          if (
+            (typeof candidate.sourceCreator === 'string' && candidate.sourceCreator.trim()) ||
+            (typeof candidate.holdingInstitution === 'string' &&
+              candidate.holdingInstitution.trim())
+          )
+            setSourceKind('document');
+          else if (typeof candidate.narrator === 'string' && candidate.narrator.trim())
+            setSourceKind('account');
           if (candidate.savedSubmissionId && candidate.receiptToken)
             void recoverSavedDraft(candidate.savedSubmissionId, candidate.receiptToken);
         }
@@ -364,6 +405,16 @@ export function ContributionForm({
       links: draft.links
         .map((link) => ({ title: link.title.trim() || link.url.trim(), url: link.url.trim() }))
         .filter((link) => link.url),
+      placement:
+        draft.placeName.trim() || draft.placeCoordinates
+          ? {
+              section: 'places',
+              ...(draft.placeName.trim() ? { proposedPlaceName: draft.placeName.trim() } : {}),
+              ...(draft.placeCoordinates
+                ? { proposedCoordinates: draft.placeCoordinates, proposedScope: draft.placeScope }
+                : {}),
+            }
+          : undefined,
     };
   }
   function validate() {
@@ -732,6 +783,29 @@ export function ContributionForm({
                     It may be shown publicly.
                   </small>
                 </label>
+                <div className="community-field">
+                  <span>
+                    Where are they buried, or a place from their life{' '}
+                    <span className="community-hint">(optional)</span>
+                  </span>
+                  <input
+                    value={draft.placeName}
+                    onChange={(event) => change('placeName', event.target.value)}
+                    maxLength={160}
+                    placeholder="e.g. Section C, South-View Cemetery, or Wheat Street Baptist Church"
+                  />
+                  <LocationPicker
+                    value={
+                      draft.placeCoordinates
+                        ? { coordinates: draft.placeCoordinates, scope: draft.placeScope }
+                        : null
+                    }
+                    onChange={(picked) => {
+                      change('placeCoordinates', picked?.coordinates ?? null);
+                      if (picked) change('placeScope', picked.scope);
+                    }}
+                  />
+                </div>
                 <details className="story-context-details">
                   <summary>
                     Connect this story to people, places, and a time{' '}
@@ -748,16 +822,33 @@ export function ContributionForm({
                     }}
                   />
                 </details>
-                <details
-                  className="story-context-details"
-                  open={draft.kind !== 'memory'}
-                  key={`provenance-${draft.kind}`}
-                >
-                  <summary>
-                    Where this came from <span className="community-hint">(optional)</span>
-                  </summary>
+                <fieldset className="community-fieldset source-kind">
+                  <legend>How do you know this?</legend>
+                  <div className="source-kind-options">
+                    {sourceKinds.map((option) => (
+                      <label className="source-kind-option" key={option.value}>
+                        <input
+                          type="radio"
+                          name="source-kind"
+                          value={option.value}
+                          checked={sourceKind === option.value}
+                          onChange={() => setSourceKind(option.value)}
+                        />
+                        <span>
+                          <strong>{option.title}</strong>
+                          <small>{option.text}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                   <div className="community-fields" style={{ margin: '16px 0' }}>
-                    {provenanceFields[draft.kind].includes('sourceCreator') && (
+                    {sourceKind === 'memory' && (
+                      <p className="community-section-note">
+                        A memory needs no document. Say who you are to this person in the box above,
+                        so readers understand the perspective.
+                      </p>
+                    )}
+                    {sourceKind === 'document' && (
                       <label className="community-field">
                         <span>
                           Original author or creator{' '}
@@ -772,10 +863,10 @@ export function ContributionForm({
                         <small>Who originally wrote, created, or recorded this material?</small>
                       </label>
                     )}
-                    {provenanceFields[draft.kind].includes('narrator') && (
+                    {sourceKind === 'account' && (
                       <label className="community-field">
                         <span>
-                          Who is remembering? <span className="community-hint">(optional)</span>
+                          Who told you? <span className="community-hint">(optional)</span>
                         </span>
                         <input
                           value={draft.narrator}
@@ -786,7 +877,7 @@ export function ContributionForm({
                         <small>Only if the account was told by somebody other than you.</small>
                       </label>
                     )}
-                    {provenanceFields[draft.kind].includes('holdingInstitution') && (
+                    {sourceKind === 'document' && (
                       <label className="community-field">
                         <span>
                           Where the material is kept{' '}
@@ -800,73 +891,76 @@ export function ContributionForm({
                         />
                       </label>
                     )}
-                    <div className={fieldClass('links')}>
-                      <span>
-                        Links to sources <span className="community-hint">(optional)</span>
-                      </span>
-                      {draft.links.map((link, index) => (
-                        <div className="community-link-row" key={index}>
-                          <input
-                            aria-label={`Link ${index + 1} title`}
-                            value={link.title}
-                            maxLength={200}
-                            placeholder="What is it? e.g. Obituary, 1968"
-                            onChange={(event) =>
-                              change(
-                                'links',
-                                draft.links.map((item, i) =>
-                                  i === index ? { ...item, title: event.target.value } : item,
-                                ),
-                              )
-                            }
-                          />
-                          <input
-                            aria-label={`Link ${index + 1} address`}
-                            type="url"
-                            inputMode="url"
-                            value={link.url}
-                            placeholder="https://"
-                            onChange={(event) =>
-                              change(
-                                'links',
-                                draft.links.map((item, i) =>
-                                  i === index ? { ...item, url: event.target.value } : item,
-                                ),
-                              )
-                            }
-                          />
+                    {sourceKind !== 'memory' && (
+                      <div className={fieldClass('links')}>
+                        <span>
+                          Links to sources <span className="community-hint">(optional)</span>
+                        </span>
+                        {draft.links.map((link, index) => (
+                          <div className="community-link-row" key={index}>
+                            <input
+                              aria-label={`Link ${index + 1} title`}
+                              value={link.title}
+                              maxLength={200}
+                              placeholder="What is it? e.g. Obituary, 1968"
+                              onChange={(event) =>
+                                change(
+                                  'links',
+                                  draft.links.map((item, i) =>
+                                    i === index ? { ...item, title: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <input
+                              aria-label={`Link ${index + 1} address`}
+                              type="url"
+                              inputMode="url"
+                              value={link.url}
+                              placeholder="https://"
+                              onChange={(event) =>
+                                change(
+                                  'links',
+                                  draft.links.map((item, i) =>
+                                    i === index ? { ...item, url: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <button
+                              className="community-text-button"
+                              type="button"
+                              aria-label={`Remove link ${index + 1}`}
+                              onClick={() =>
+                                change(
+                                  'links',
+                                  draft.links.filter((_, i) => i !== index),
+                                )
+                              }
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                        <FieldError name="links" />
+                        {draft.links.length < 10 && (
                           <button
                             className="community-text-button"
                             type="button"
-                            aria-label={`Remove link ${index + 1}`}
                             onClick={() =>
-                              change(
-                                'links',
-                                draft.links.filter((_, i) => i !== index),
-                              )
+                              change('links', [...draft.links, { title: '', url: '' }])
                             }
                           >
-                            <Trash2 size={15} aria-hidden="true" />
+                            <Plus size={15} aria-hidden="true" /> Add a link
                           </button>
-                        </div>
-                      ))}
-                      <FieldError name="links" />
-                      {draft.links.length < 10 && (
-                        <button
-                          className="community-text-button"
-                          type="button"
-                          onClick={() => change('links', [...draft.links, { title: '', url: '' }])}
-                        >
-                          <Plus size={15} aria-hidden="true" /> Add a link
-                        </button>
-                      )}
-                      <small>
-                        A web page, catalogue record, or article that supports this story. A memory
-                        does not need one.
-                      </small>
-                    </div>
+                        )}
+                        <small>
+                          A web page, catalogue record, or article that supports this story.
+                        </small>
+                      </div>
+                    )}
                   </div>
-                </details>
+                </fieldset>
               </div>
             </section>
             <section className="community-section">
@@ -1098,6 +1192,23 @@ export function ContributionForm({
                   .join('; ')}
               </div>
             )}
+            {(draft.placeName.trim() || draft.placeCoordinates) && (
+              <div className="community-review-line">
+                <strong>Place</strong>
+                {[
+                  draft.placeName.trim(),
+                  draft.placeCoordinates
+                    ? `pin at ${draft.placeCoordinates[1].toFixed(5)}, ${draft.placeCoordinates[0].toFixed(5)} (${draft.placeScope === 'cemetery' ? 'South-View Cemetery' : 'Atlanta'})`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </div>
+            )}
+            <div className="community-review-line">
+              <strong>How you know this</strong>
+              {sourceKinds.find((option) => option.value === sourceKind)?.title}
+            </div>
             {draft.context && (
               <div className="community-review-line">
                 <strong>Context</strong>

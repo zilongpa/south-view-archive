@@ -45,6 +45,80 @@ import {
   VetPanel,
 } from './review-panels';
 
+type PlaceDraft = {
+  id: string;
+  name: string;
+  scope: 'cemetery' | 'atlanta';
+  lng: string;
+  lat: string;
+  precision: 'reference' | 'address' | 'verified' | 'unmapped';
+  note: string;
+  relationship: string;
+};
+/** In-page additions say where they belong; the desk starts there so one click publishes them. */
+function defaultApplyTo(record: SubmissionRecord): ReviewInput['applyTo'] {
+  const placement = record.input.placement;
+  if (!placement || record.input.kind === 'memory' || record.status === 'published') return 'entry';
+  if (placement.section === 'biography') return 'biography';
+  if (placement.section === 'places') return 'place';
+  return 'entry';
+}
+function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraft {
+  const empty: PlaceDraft = {
+    id: '',
+    name: '',
+    scope: 'cemetery',
+    lng: '',
+    lat: '',
+    precision: 'unmapped',
+    note: '',
+    relationship: '',
+  };
+  const placement = record.input.placement;
+  if (placement?.section !== 'places') return empty;
+  const existing = archive.places.find((place) => record.input.placeIds.includes(place.id));
+  if (existing)
+    return {
+      id: existing.id,
+      name: existing.name,
+      scope: existing.scope,
+      lng: existing.coordinates ? String(existing.coordinates[0]) : '',
+      lat: existing.coordinates ? String(existing.coordinates[1]) : '',
+      precision: existing.precision,
+      note: existing.locationNote,
+      relationship: record.input.title,
+    };
+  const coordinates = placement.proposedCoordinates;
+  return {
+    ...empty,
+    name: placement.proposedPlaceName ?? '',
+    scope: placement.proposedScope ?? 'cemetery',
+    lng: coordinates ? String(coordinates[0]) : '',
+    lat: coordinates ? String(coordinates[1]) : '',
+    precision: coordinates ? 'reference' : 'unmapped',
+    note: coordinates
+      ? 'Position marked on the map by the contributor; not independently verified.'
+      : '',
+    relationship: record.input.title,
+  };
+}
+function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['applyTo']) {
+  const placement = record.input.placement;
+  if (!placement) return '';
+  if (placement.section === 'biography' && placement.blockId) {
+    const where =
+      record.input.kind === 'correction'
+        ? 'edited an existing paragraph in place. Publishing to the biography replaces that paragraph with the text above'
+        : 'wrote this under a specific paragraph. Publishing to the biography inserts it right after that paragraph';
+    return `The contributor ${where}${applyTo === 'biography' ? '.' : '; the current choice keeps it as a separate entry.'}`;
+  }
+  if (placement.section === 'places')
+    return placement.proposedCoordinates
+      ? 'The contributor marked this place on the map. Its position is filled in below for you to confirm.'
+      : 'The contributor added this as a place on the person page. Its details are filled in below.';
+  return '';
+}
+
 export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   const params = useSearchParams();
   const [state, setState] = useState(() => parseReviewState(params));
@@ -380,7 +454,7 @@ function ReviewEditor({
     record.status === 'published' ? 'withdraw' : 'publish',
   );
   const readOnly = ['withdrawn', 'rejected', 'draft'].includes(record.status);
-  const [applyTo, setApplyTo] = useState<ReviewInput['applyTo']>('entry');
+  const [applyTo, setApplyTo] = useState<ReviewInput['applyTo']>(() => defaultApplyTo(record));
   const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [photoIds, setPhotoIds] = useState(record.photos.map((photo) => photo.id));
   const [photoEdits, setPhotoEdits] = useState(
@@ -391,16 +465,8 @@ function ReviewEditor({
       rights: photo.rights,
     })),
   );
-  const [place, setPlace] = useState({
-    id: '',
-    name: '',
-    scope: 'cemetery' as 'cemetery' | 'atlanta',
-    lng: '',
-    lat: '',
-    precision: 'unmapped' as 'reference' | 'address' | 'verified' | 'unmapped',
-    note: '',
-    relationship: '',
-  });
+  const [place, setPlace] = useState(() => initialPlace(record, archive));
+  const placementHint = placementExplanation(record, applyTo);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -841,6 +907,7 @@ function ReviewEditor({
                   Personal memories belong in clearly labeled community entries. Changes to factual
                   records need claim-appropriate evidence.
                 </small>
+                {placementHint && <small className="review-placement-hint">{placementHint}</small>}
               </label>
               <details>
                 <summary className="community-text-button">
@@ -1094,7 +1161,11 @@ function ReviewEditor({
                   {applyTo === 'entry'
                     ? 'Independent community entry'
                     : applyTo === 'biography'
-                      ? 'Community entry and biography passage'
+                      ? record.input.kind === 'correction' && record.input.placement?.blockId
+                        ? 'Community entry; the edited paragraph replaces the current one'
+                        : record.input.placement?.blockId
+                          ? 'Community entry and a biography passage after the paragraph it was written under'
+                          : 'Community entry and biography passage'
                       : 'Community entry and map place update'}
                 </p>
                 {applyTo === 'place' && (

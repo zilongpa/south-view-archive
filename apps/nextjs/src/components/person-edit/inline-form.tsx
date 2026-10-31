@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowRight, ImagePlus, Trash2, X } from 'lucide-react';
 import { RecordPicker } from '../record-picker';
+import { LocationPicker } from '../location-picker';
 import {
   defaultBlockTitle,
   validateBlock,
@@ -43,14 +44,20 @@ const prompts: Record<
   },
 };
 
-function emptyBlock(section: EditSection, kind: EditKind, anchor?: string): EditBlock {
+function emptyBlock(
+  section: EditSection,
+  kind: EditKind,
+  anchor?: string,
+  original?: string,
+): EditBlock {
   return {
     id: crypto.randomUUID(),
     section,
     kind,
     anchor,
+    ...(kind === 'correction' && original ? { originalText: original } : {}),
     title: '',
-    body: '',
+    body: kind === 'correction' ? (original ?? '') : '',
     context: '',
     placeIds: [],
     proposedPlaceName: '',
@@ -62,6 +69,7 @@ export function InlineForm({
   section,
   kind,
   anchor,
+  original,
   initial,
   personName,
   places,
@@ -71,6 +79,7 @@ export function InlineForm({
   section: EditSection;
   kind: EditKind;
   anchor?: string;
+  original?: string;
   initial?: EditBlock;
   personName: string;
   places: RecordOption[];
@@ -78,7 +87,10 @@ export function InlineForm({
   onCancel: () => void;
 }) {
   const id = useId();
-  const [block, setBlock] = useState<EditBlock>(() => initial ?? emptyBlock(section, kind, anchor));
+  const [block, setBlock] = useState<EditBlock>(
+    () => initial ?? emptyBlock(section, kind, anchor, original),
+  );
+  const correction = kind === 'correction';
   const [issues, setIssues] = useState<BlockIssue[]>([]);
   const first = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -148,7 +160,7 @@ export function InlineForm({
   return (
     <form
       className="person-edit-form"
-      aria-label={kind === 'correction' ? 'Suggest a correction' : prompt.heading}
+      aria-label={correction ? 'Edit this paragraph' : prompt.heading}
       onSubmit={(event) => {
         event.preventDefault();
         save();
@@ -156,7 +168,7 @@ export function InlineForm({
       noValidate
     >
       <div className="person-edit-form-head">
-        <strong>{kind === 'correction' ? 'Suggest a correction' : prompt.heading}</strong>
+        <strong>{correction ? 'Edit this paragraph' : prompt.heading}</strong>
         <button type="button" className="community-text-button" onClick={onCancel}>
           <X size={15} aria-hidden="true" /> Cancel
         </button>
@@ -185,6 +197,18 @@ export function InlineForm({
             <small className="community-field-error" role="alert">
               {issue('place')}
             </small>
+          )}
+          {!block.placeIds.length && (
+            <LocationPicker
+              value={
+                block.coordinates
+                  ? { coordinates: block.coordinates, scope: block.scope ?? 'cemetery' }
+                  : null
+              }
+              onChange={(picked) =>
+                patch({ coordinates: picked?.coordinates ?? null, scope: picked?.scope })
+              }
+            />
           )}
         </div>
       )}
@@ -272,7 +296,7 @@ export function InlineForm({
       )}
       <label className={`community-field ${issue('body') ? 'has-error' : ''}`}>
         <span>
-          {kind === 'correction' ? 'What is wrong, and what should it say?' : prompt.body}{' '}
+          {correction ? 'The paragraph, as you would like it to read' : prompt.body}{' '}
           <span className="community-required">*</span>
         </span>
         <textarea
@@ -281,23 +305,23 @@ export function InlineForm({
           rows={section === 'biography' ? 6 : 4}
           maxLength={20000}
           onChange={(event) => patch({ body: event.target.value })}
-          placeholder={
-            kind === 'correction'
-              ? 'The paragraph says 1898; family records give 1899 for her birth.'
-              : undefined
-          }
         />
         {issue('body') && (
           <small className="community-field-error" role="alert">
             {issue('body')}
           </small>
         )}
-        <small>{prompt.bodyHint}</small>
+        <small>
+          {correction
+            ? 'Change the text directly. Reviewers see your version beside the current one and can apply it with one click.'
+            : prompt.bodyHint}
+        </small>
       </label>
       {prompt.context && (
         <label className="community-field">
           <span>
-            {prompt.context} <span className="community-hint">(optional)</span>
+            {correction ? 'What changed, and how do you know?' : prompt.context}{' '}
+            <span className="community-hint">(optional)</span>
           </span>
           <input
             value={block.context}

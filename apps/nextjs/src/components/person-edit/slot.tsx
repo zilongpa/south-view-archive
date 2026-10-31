@@ -13,11 +13,14 @@ import { sameSlot, usePersonEdit } from './context';
 export function AddSlot({
   section,
   anchor,
+  original,
   addLabel,
   correctionLabel,
 }: {
   section: EditSection;
   anchor?: string;
+  /** The biography paragraph this slot follows, offered for in-place editing. */
+  original?: string;
   addLabel?: string;
   correctionLabel?: string;
 }) {
@@ -39,7 +42,7 @@ export function AddSlot({
         community: 'Add a memory or photograph',
         portrait: 'Add a photograph',
       }[section],
-    correction: correctionLabel ?? 'Suggest a correction',
+    correction: correctionLabel ?? copy.editParagraph,
   };
   return (
     <div className="person-edit-slot" data-section={section}>
@@ -52,6 +55,7 @@ export function AddSlot({
           section={section}
           kind={editingBlock?.kind ?? edit.activeKind}
           anchor={anchor}
+          original={original}
           initial={editingBlock}
           personName={edit.person.name}
           places={edit.places}
@@ -68,7 +72,7 @@ export function AddSlot({
           >
             <Plus size={15} aria-hidden="true" /> {labels.add}
           </button>
-          {section === 'biography' && anchor && anchor !== 'start' && (
+          {section === 'biography' && anchor && anchor !== 'start' && original && (
             <button
               type="button"
               className="person-edit-add"
@@ -95,7 +99,7 @@ function DraftBlock({ block }: { block: EditBlock }) {
         {preview
           ? copy.awaitingReview
           : block.kind === 'correction'
-            ? 'Correction · not sent yet'
+            ? 'Edited paragraph · not sent yet'
             : 'Addition · not sent yet'}
       </p>
       {block.proposedPlaceName && <strong>{block.proposedPlaceName}</strong>}

@@ -399,6 +399,44 @@ export async function claimSubmission(id: string, actor: Actor) {
 }
 
 type PublicTable = 'persons' | 'places' | 'person_places' | 'contributions' | 'sources' | 'credits';
+type BiographyParagraph = Person['biography'][number];
+/**
+ * Where an approved biography passage lands. A correction replaces the paragraph it concerns,
+ * an addition follows the paragraph it was written under, and anything else goes at the end.
+ * Anchors are the stored paragraph id or, for the initial compilation, the paragraph's index.
+ * Returns null when a correction's paragraph can no longer be found.
+ */
+export function placeParagraph(
+  biography: BiographyParagraph[],
+  paragraph: BiographyParagraph,
+  placement: { kind: string; anchor?: string; originalText?: string },
+): BiographyParagraph[] | null {
+  const keyed = biography
+    .map((item, index) => ({ item, key: item.id ?? String(index) }))
+    .filter(({ item }) => item.id !== paragraph.id);
+  const rest = keyed.map(({ item }) => item);
+  let index =
+    placement.anchor === undefined ? -1 : keyed.findIndex(({ key }) => key === placement.anchor);
+  if (placement.kind !== 'correction') {
+    if (index < 0) return [...rest, paragraph];
+    return [...rest.slice(0, index + 1), paragraph, ...rest.slice(index + 1)];
+  }
+  const original = placement.originalText?.trim();
+  if (original && rest[index]?.text.trim() !== original)
+    index = rest.findIndex((item) => item.text.trim() === original);
+  if (index < 0) return null;
+  const previous = rest[index]!;
+  const replaced: BiographyParagraph = {
+    ...paragraph,
+    id: previous.id ?? paragraph.id,
+    citations: [...previous.citations, ...paragraph.citations].filter(
+      (citation, i, all) => all.findIndex((other) => other.sourceId === citation.sourceId) === i,
+    ),
+    creditIds: [...new Set([...previous.creditIds, ...paragraph.creditIds])],
+  };
+  return rest.map((item, i) => (i === index ? replaced : item));
+}
+
 async function saveProjection(
   tx: Store,
   submissionId: string,
@@ -547,7 +585,17 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       citations,
       creditIds: [creditId],
     };
-    person.biography = [...person.biography.filter((p) => p.id !== paragraph.id), paragraph];
+    const placed = placeParagraph(person.biography, paragraph, {
+      kind: input.kind,
+      anchor: input.placement?.blockId,
+      originalText: input.placement?.originalText,
+    });
+    if (!placed)
+      throw new DomainError(
+        'BAD_REQUEST',
+        'The paragraph this correction concerns has changed since it was written. Publish it as a community entry, or edit the text to match the current biography.',
+      );
+    person.biography = placed;
     await saveProjection(tx, row.id, reviewId, 'persons', person);
   }
   if (review.applyTo === 'place') {

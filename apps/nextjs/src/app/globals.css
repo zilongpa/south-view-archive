@@ -956,7 +956,7 @@ svg {
   right: 0;
   top: 0;
   bottom: 0;
-  width: 340px;
+  width: var(--detail-width, 340px);
   background: var(--surface);
   border-left: 1px solid #d4cbbd;
   box-shadow: -8px 0 32px #40341d16;
@@ -1174,17 +1174,53 @@ svg {
   margin: 10px 0 14px;
 }
 .has-selection .map-place-heading {
-  max-width: calc(100% - 365px);
+  max-width: calc(100% - var(--detail-width, 340px) - 25px);
 }
 .has-selection .map-north,
 .has-selection .map-controls {
-  right: 360px;
+  right: calc(var(--detail-width, 340px) + 20px);
 }
 .has-selection .map-caption {
-  max-width: calc(100% - 365px);
+  max-width: calc(100% - var(--detail-width, 340px) - 25px);
 }
 .has-selection .maplibregl-ctrl-bottom-right {
-  right: 340px;
+  right: var(--detail-width, 340px);
+}
+/* Drag edge of the person panel: the left edge on a desktop, a grab bar on a phone. */
+.detail-resize {
+  position: absolute;
+  left: -6px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: col-resize;
+  z-index: 7;
+  touch-action: none;
+}
+.detail-resize::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 3px;
+  height: 48px;
+  margin-top: -24px;
+  border-radius: 3px;
+  background: #b9ad97;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.detail-resize:hover::after,
+.detail-resize:focus-visible::after,
+.detail-panel.is-resizing .detail-resize::after {
+  opacity: 1;
+}
+.detail-resize:focus-visible {
+  outline: 2px solid var(--wine);
+  outline-offset: -2px;
+}
+.detail-panel.is-resizing {
+  user-select: none;
 }
 .has-selection .maplibregl-ctrl-attrib {
   font-size: 8px !important;
@@ -1712,21 +1748,21 @@ svg {
     top: 18px;
   }
   .detail-panel {
-    width: 315px;
+    width: var(--detail-width, 315px);
   }
   .has-selection .map-controls,
   .has-selection .map-north {
-    right: 329px;
+    right: calc(var(--detail-width, 315px) + 14px);
   }
   .has-selection .map-place-heading {
     display: none;
   }
   .has-selection .map-caption {
-    max-width: calc(100% - 330px);
+    max-width: calc(100% - var(--detail-width, 315px) - 15px);
     font-size: 9px;
   }
   .has-selection .maplibregl-ctrl-bottom-right {
-    right: 315px;
+    right: var(--detail-width, 315px);
   }
   .toolbar-description {
     display: none;
@@ -1913,8 +1949,8 @@ svg {
     width: 100%;
     top: auto;
     max-height: 92%;
-    height: auto;
-    min-height: 340px;
+    height: var(--detail-height, auto);
+    min-height: 260px;
     border: 1px solid #d2c5b3;
     border-radius: 10px 10px 0 0;
     box-shadow: 0 -5px 30px #30200f29;
@@ -1931,6 +1967,27 @@ svg {
     padding: 18px 22px 0;
     min-height: 0;
     max-height: 370px;
+  }
+  .detail-panel.is-resized .detail-scroll {
+    max-height: none;
+  }
+  .detail-resize {
+    left: 50%;
+    right: auto;
+    top: 0;
+    bottom: auto;
+    width: 140px;
+    height: 24px;
+    margin-left: -70px;
+    cursor: row-resize;
+  }
+  .detail-resize::after {
+    left: 50%;
+    top: 7px;
+    width: 48px;
+    height: 5px;
+    margin: 0 0 0 -24px;
+    opacity: 1;
   }
   .detail-person .large {
     float: left;

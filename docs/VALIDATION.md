@@ -4,6 +4,18 @@ Initial date: 2026-10-03. Environment: Windows, Node 24.19.0, pnpm 11.19.0, Next
 
 This is a historical record of the checks below, with later dated updates. Translation into English on 2026-10-19 does not imply that application tests or live-service checks were rerun. Screenshot paths refer to local validation artifacts under `docs/screenshots/`; those images are excluded from the private GitHub source snapshot.
 
+## In-page edits, map picker, and reviewer entry · 2026-10-31
+
+Follow-up to the 2026-10-28 round, after the team settled on keeping the contribution model and adding the parts of the parallel profile proposal that still mattered.
+
+- **Edit this paragraph.** In edit mode each biography paragraph offers "Edit this paragraph" with the current text pre-filled. The submission carries the paragraph as it was (`placement.originalText`). On the review desk the original is shown beside the contributor's version, "Where should the approved content appear?" starts on the biography for such edits, and publication replaces the paragraph in place, keeping its id and merging citations and credits. Additions written under a paragraph are inserted after it. A correction whose paragraph has changed since is refused with a clear message rather than misplaced (`placeParagraph` in `packages/db/src/community.ts`).
+- **Map point picker.** "Add a place" on a person page and "Where are they buried, or a place from their life" on the new-person form share `LocationPicker`: tap to drop a pin, drag to adjust, or search an Atlanta address through OpenStreetMap Nominatim. The cemetery outline decides the scope. The point travels as `placement.proposedCoordinates`; the review desk pre-fills the map place panel with it as a reference position for the reviewer to confirm.
+- **How do you know this?** The new-person form replaces the provenance drawer with three choices (own or family memory, someone else's account, a document or record) and shows only the fields that choice needs.
+- **Review desk in the navigation.** Signed-in reviewers see a "Review desk" link; the session is cached per tab so the link does not flicker.
+- **Resizable person panel on the map.** The panel's left edge drags wider on a desktop (300px up to 65% of the viewport, at most 760px); on a phone a grab bar at the top drags it taller (260px up to 92% of the height). Arrow keys work on the focused handle. The size is remembered per browser; map controls move with it, and the compass hides under a tall phone panel.
+
+Verified locally on 2026-10-31: all six workspace type checks, 122 tests, and a production build. In the browser: the paragraph editor opens pre-filled and refuses an unchanged paragraph; a pin dropped on the picker reports its position and scope; the new-person form shows the three source choices and the picker; the map panel resizes by pointer on both desktop and phone widths without errors. Not exercised in the browser: a reviewer session (the navigation link and the pre-filled review panels are covered by code and the backend test), address search against the live Nominatim service, and photo upload inside the inline forms.
+
 ## Usability update · 2026-10-28
 
 Acting on the 2026-10-21 usability sessions (two testers, in-class), this update changed the public flow rather than adding features:

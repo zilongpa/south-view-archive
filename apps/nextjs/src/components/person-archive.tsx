@@ -224,7 +224,11 @@ export function PersonArchive({
                           data={data}
                           returnTo={returnTo}
                         />
-                        <AddSlot section="biography" anchor={block.id ?? String(index)} />
+                        <AddSlot
+                          section="biography"
+                          anchor={block.id ?? String(index)}
+                          original={block.text}
+                        />
                       </div>
                     ))}
                   </div>

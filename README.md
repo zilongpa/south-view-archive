@@ -165,11 +165,11 @@ Main routes:
 - `/explore?scope=atlanta`: combined Atlanta and South-View view.
 - `/people/john-lewis`: permanent, directly accessible, shareable person page.
 - `/explore?embed=1`: simplified embedded view.
-- `/people/[id]?edit=1`: in-page additions, corrections, places, and photographs for an existing person.
+- `/people/[id]?edit=1`: in-page additions, paragraph edits, places marked on a map, and photographs for an existing person.
 - `/contribute`: proposals for a person not yet in the archive, with a jump to existing person pages.
 - `/submissions/[id]#receipt=…`: private receipt, original submission, status, and supplements.
 - `/sign-in`, `/my-contributions`: optional Google sign-in and owned submissions.
-- `/admin/contributions`: separately authorized staff review.
+- `/admin/contributions`: separately authorized staff review. Signed-in reviewers also get a **Review desk** link in the navigation.
 - `/contributions/[id]`: published contribution, sources, and provider attribution.
 - `/about`: collection scope and reading guidance.
 
@@ -181,7 +181,7 @@ People, places, person-place relationships, materials, sources, editorial issues
 
 ## Staff review desk and AI vetting
 
-`/admin/contributions` provides a submission queue with title/person/ID search, status and content-type filters, real status counts, and a review workspace. Staff can compare the original, edit the public draft, inspect review history, request information, approve and publish, reject with a contributor-visible reason, or withdraw a published entry. Approval opens a public-content preview before the final publication action. Internal notes and private contact details remain staff-only. Selected records and filters survive refresh; unsaved edits receive a navigation prompt.
+`/admin/contributions` provides a submission queue with title/person/ID search, status and content-type filters, real status counts, and a review workspace. Staff can compare the original, edit the public draft, inspect review history, request information, approve and publish, reject with a contributor-visible reason, or withdraw a published entry. Approval opens a public-content preview before the final publication action. In-page edits arrive with their placement already applied: a paragraph edit shows the paragraph as it was beside the contributor's version and, published to the biography, replaces that paragraph in place; an addition lands after the paragraph it was written under; a place marked on the map arrives with its position filled in for confirmation. If the paragraph changed since the edit was written, publication to the biography is refused and the reviewer can keep the edit as a community entry instead. Internal notes and private contact details remain staff-only. Selected records and filters survive refresh; unsaved edits receive a navigation prompt.
 
 **Vet** uses GPT-6 Luna (`gpt-6-luna`), medium reasoning, and required web search through one awaited OpenAI Responses request. Reports contain individual claims, verdicts, explanations, evidence links, reviewer notes, follow-up questions, limitations, and attachment coverage. Personal memories are not treated as false just because online corroboration is unavailable. Reports are stored privately, survive restarts, and become stale when new original material is added. Duplicate starts are blocked and failed checks can be retried. Human review and publication work independently of Vet.
 

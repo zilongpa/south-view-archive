@@ -457,6 +457,12 @@ export function OriginalSubmission({
             </dd>
           </div>
         )}
+        {record.input.placement?.originalText && (
+          <div>
+            <dt>Paragraph as it was</dt>
+            <dd className="review-original-paragraph">{record.input.placement.originalText}</dd>
+          </div>
+        )}
         <div>
           <dt>Context</dt>
           <dd>{record.input.context || 'None supplied'}</dd>

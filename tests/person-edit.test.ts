@@ -135,3 +135,63 @@ test('grouped receipts share one private token in the fragment', () => {
   assert.equal(groupedReceiptUrl(['a'], 'tok'), '/submissions/a#receipt=tok');
   assert.equal(groupedReceiptUrl(['a', 'b', 'c'], 'tok'), '/submissions/a#receipt=tok&also=b%2Cc');
 });
+
+test('an in-place paragraph edit carries the original text and refuses unchanged text', () => {
+  const original = 'He kept the same pew at Ebenezer for decades, according to our family.';
+  const edit = block({ kind: 'correction', originalText: original, body: original });
+  assert.equal(validateBlock(edit)[0]?.message, 'Change the paragraph, or cancel.');
+  const changed = {
+    ...edit,
+    body: 'He kept the same pew at Ebenezer for forty years, our family says.',
+  };
+  assert.deepEqual(validateBlock(changed), []);
+  const input = submissionInputSchema.parse(blockToSubmissionInput(changed, person, contact));
+  assert.equal(input.kind, 'correction');
+  assert.equal(input.title, "Correction to John Lewis's story");
+  assert.deepEqual(input.placement, {
+    section: 'biography',
+    blockId: 'nashville',
+    originalText: original,
+  });
+});
+
+test('a place marked on the map travels as a proposed position, unless an existing place was chosen', () => {
+  const marked = block({
+    section: 'places',
+    anchor: undefined,
+    proposedPlaceName: 'Wheat Street Baptist Church',
+    coordinates: [-84.38, 33.755],
+    scope: 'atlanta',
+  });
+  const input = submissionInputSchema.parse(blockToSubmissionInput(marked, person, contact));
+  assert.deepEqual(input.placement, {
+    section: 'places',
+    proposedPlaceName: 'Wheat Street Baptist Church',
+    proposedCoordinates: [-84.38, 33.755],
+    proposedScope: 'atlanta',
+  });
+  const existing = submissionInputSchema.parse(
+    blockToSubmissionInput(
+      block({
+        section: 'places',
+        anchor: undefined,
+        placeIds: ['south-view'],
+        coordinates: [1, 2],
+      }),
+      person,
+      contact,
+    ),
+  );
+  assert.deepEqual(existing.placement, { section: 'places' });
+  const restored = restoreEditSession(
+    JSON.parse(serializeEditSession({ receiptToken: 'r'.repeat(72), blocks: [marked] })),
+  );
+  assert.deepEqual(restored?.blocks[0]?.coordinates, [-84.38, 33.755]);
+  assert.equal(restored?.blocks[0]?.scope, 'atlanta');
+  const hostile = restoreEditSession({
+    receiptToken: 'r'.repeat(72),
+    blocks: [{ ...marked, coordinates: ['x', 2], scope: 'moon', photos: [] }],
+  });
+  assert.equal(hostile?.blocks[0]?.coordinates, null);
+  assert.equal(hostile?.blocks[0]?.scope, undefined);
+});

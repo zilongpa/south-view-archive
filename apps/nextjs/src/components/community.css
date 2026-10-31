@@ -1027,3 +1027,56 @@
     animation: none;
   }
 }
+
+/* "How do you know this?" on the new-person form. */
+.community-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 4px 0 0;
+  min-width: 0;
+}
+.community-fieldset > legend {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 10px;
+}
+.source-kind-options {
+  display: grid;
+  gap: 8px;
+}
+.source-kind-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  border: 1px solid var(--control-border, #8c806d);
+  background: #fffdf6;
+  cursor: pointer;
+}
+.source-kind-option:has(input:checked) {
+  border-color: var(--wine);
+  box-shadow: inset 0 0 0 1px var(--wine);
+  background: #faf3ec;
+}
+.source-kind-option input {
+  margin-top: 3px;
+  accent-color: var(--wine);
+}
+.source-kind-option span {
+  display: grid;
+  gap: 2px;
+}
+.source-kind-option strong {
+  font-size: 15px;
+}
+.source-kind-option small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+@media (min-width: 700px) {
+  .source-kind-options {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

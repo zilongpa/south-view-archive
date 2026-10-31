@@ -19,6 +19,8 @@ export const copy = {
   awaitingReview: 'Your addition · awaiting review · not public yet',
   addPerson: 'Add a person',
   account: 'My contributions',
+  reviewDesk: 'Review desk',
+  editParagraph: 'Edit this paragraph',
   requiredLegend: 'Fields marked * are required. Everything else is optional.',
   noEmail:
     'The archive does not send email. After you send your story, save the private link shown on the next page: it is the only way back to your submission.',

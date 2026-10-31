@@ -750,3 +750,19 @@
 .review-findings strong {
   overflow-wrap: anywhere;
 }
+
+/* In-page edits: where the contributor put them, and the paragraph they replaced. */
+.review-placement-hint {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #f6efe0;
+  border-left: 2px solid #b99e7b;
+  color: #4d483f;
+}
+.review-original-paragraph {
+  white-space: pre-wrap;
+  color: var(--muted);
+  border-left: 2px solid #d4cbbd;
+  padding-left: 10px;
+}

@@ -20,11 +20,16 @@ export type EditBlock = {
   kind: EditKind;
   /** Biography block id (or index) the block follows or corrects. */
   anchor?: string;
+  /** For corrections: the paragraph text as it was when the visitor started editing it. */
+  originalText?: string;
   title: string;
   body: string;
   context: string;
   placeIds: string[];
   proposedPlaceName: string;
+  /** A point marked on the map for a new place, longitude first. */
+  coordinates?: [number, number] | null;
+  scope?: 'cemetery' | 'atlanta';
   photos: EditPhotoDraft[];
   /** Set when a restored block had photographs that cannot be recovered from sessionStorage. */
   hadPhotos?: boolean;
@@ -74,6 +79,8 @@ export function validateBlock(block: EditBlock): BlockIssue[] {
     });
   if (block.body.trim().length < 20)
     issues.push({ field: 'body', message: 'Write at least 20 characters.' });
+  else if (block.kind === 'correction' && block.body.trim() === block.originalText?.trim())
+    issues.push({ field: 'body', message: 'Change the paragraph, or cancel.' });
   if (block.section === 'places' && !block.placeIds.length && !block.proposedPlaceName.trim())
     issues.push({ field: 'place', message: 'Choose a place, or name one not listed yet.' });
   if (block.section === 'portrait' && !block.photos.length)
@@ -101,8 +108,14 @@ export function blockToSubmissionInput(
   const placement: Placement = {
     section: block.section,
     ...(block.anchor ? { blockId: block.anchor } : {}),
+    ...(block.kind === 'correction' && block.originalText
+      ? { originalText: block.originalText }
+      : {}),
     ...(block.proposedPlaceName.trim()
       ? { proposedPlaceName: block.proposedPlaceName.trim() }
+      : {}),
+    ...(block.coordinates && !block.placeIds.length
+      ? { proposedCoordinates: block.coordinates, proposedScope: block.scope ?? 'cemetery' }
       : {}),
   };
   return {
@@ -133,6 +146,14 @@ const sections: EditSection[] = ['biography', 'places', 'community', 'portrait']
 const kinds: EditKind[] = ['addition', 'correction', 'memory'];
 const text = (value: unknown, max: number) =>
   typeof value === 'string' ? value.slice(0, max) : '';
+function restoreCoordinates(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [lng, lat] = value;
+  if (typeof lng !== 'number' || typeof lat !== 'number' || !isFinite(lng) || !isFinite(lat))
+    return null;
+  if (Math.abs(lng) > 180 || Math.abs(lat) > 85) return null;
+  return [lng, lat];
+}
 
 /** Restores text blocks saved in this tab. Files cannot be restored; the block says so. */
 export function restoreEditSession(value: unknown): EditSession | null {
@@ -155,6 +176,10 @@ export function restoreEditSession(value: unknown): EditSession | null {
       section: block.section as EditSection,
       kind: block.kind as EditKind,
       anchor: typeof block.anchor === 'string' ? block.anchor.slice(0, 120) : undefined,
+      originalText:
+        typeof block.originalText === 'string' ? block.originalText.slice(0, 20000) : undefined,
+      coordinates: restoreCoordinates(block.coordinates),
+      scope: block.scope === 'atlanta' || block.scope === 'cemetery' ? block.scope : undefined,
       title: text(block.title, 160),
       body: text(block.body, 20000),
       context: text(block.context, 4000),
