@@ -7,11 +7,9 @@ import {
   ArrowDownUp,
   ArrowRight,
   ArrowUpRight,
-  BookOpen,
   Check,
   ChevronRight,
   Copy,
-  Headphones,
   List,
   Map as MapIcon,
   MapPin,
@@ -21,7 +19,6 @@ import {
   X,
 } from 'lucide-react';
 import './explorer-map.css';
-import { ProvidedBy } from './provided-by';
 import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
 import {
@@ -213,11 +210,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       p.id === (state.place ?? selectedRelations[0]?.placeId) &&
       selectedRelations.some((r) => r.placeId === p.id),
   );
-  const materials = selected
-    ? archive.materials.filter(
-        (m) => m.personId === selected.id || m.relatedPersonIds.includes(selected.id),
-      )
-    : [];
   const preview = archive.people.find((p) => p.id === previewTarget?.personId);
   const selectPerson = useCallback(
     (personId: string, placeId?: string) => {
@@ -533,30 +525,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                       </div>
                     </div>
                     <p className="detail-summary">{selected.summary}</p>
-                    <ProvidedBy
-                      creditIds={selected.creditIds}
-                      title={`${selected.name}: overview`}
-                      data={archive}
-                    />
-                    <div className="detail-citation-links">
-                      {selected.summaryCitations.map((c) => {
-                        const source = archive.sources.find((s) => s.id === c.sourceId);
-                        return source ? (
-                          <a
-                            key={c.sourceId + c.locator}
-                            href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${source.id}`}
-                          >
-                            <BookOpen size={16} aria-hidden="true" />
-                            <span>
-                              [{archive.sources.findIndex((s) => s.id === source.id) + 1}]{' '}
-                              {source.publisher}
-                              {c.locator ? ` · ${c.locator}` : ''}
-                            </span>
-                            <ArrowUpRight size={16} aria-hidden="true" />
-                          </a>
-                        ) : null;
-                      })}
-                    </div>
                     <section className="connected-places">
                       <h3>
                         <MapPin size={16} />
@@ -564,8 +532,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                       </h3>
                       {selectedRelations.length === 0 ? (
                         <p className="quiet-note">
-                          No location has been documented in this area yet. The full record is still
-                          available.
+                          No location has been documented in this area yet.
                         </p>
                       ) : (
                         selectedRelations.map((relation) => {
@@ -575,7 +542,14 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                               className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''}`}
                               key={relation.id}
                             >
-                              <span className="eyebrow">{relation.label}</span>
+                              <span className="eyebrow">
+                                {relation.label}
+                                {place.precision === 'reference'
+                                  ? ' · reference position'
+                                  : place.precision === 'unmapped'
+                                    ? ' · not yet mapped'
+                                    : ''}
+                              </span>
                               <button
                                 disabled={!place.coordinates}
                                 aria-current={
@@ -590,43 +564,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                                 <strong>{place.name}</strong>
                                 <ArrowUpRight size={15} />
                               </button>
-                              <p>{place.locationNote}</p>
-                              <ProvidedBy
-                                creditIds={[
-                                  ...new Set([...place.creditIds, ...relation.creditIds]),
-                                ]}
-                                title={place.name}
-                                data={archive}
-                              />
-                              <div className="place-source-links">
-                                <Link
-                                  href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${relation.citations[0]?.sourceId}`}
-                                >
-                                  Historical connection [
-                                  {archive.sources.findIndex(
-                                    (s) => s.id === relation.citations[0]?.sourceId,
-                                  ) + 1}
-                                  ]
-                                </Link>
-                                {place.coordinateCitations.map((c) => (
-                                  <Link
-                                    key={c.sourceId}
-                                    href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${c.sourceId}`}
-                                  >
-                                    Location source [
-                                    {archive.sources.findIndex((s) => s.id === c.sourceId) + 1}]
-                                  </Link>
-                                ))}
-                              </div>
-                              <span className="precision-badge">
-                                {place.precision === 'reference'
-                                  ? 'Reference location'
-                                  : place.precision === 'address'
-                                    ? 'Address-level location'
-                                    : place.precision === 'unmapped'
-                                      ? 'Location not yet mapped'
-                                      : 'Documented location'}
-                              </span>
                             </div>
                           );
                         })
@@ -643,58 +580,8 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         <ArrowRight size={15} />
                       </button>
                     </section>
-                    {materials.length > 0 && (
-                      <section className="detail-materials">
-                        <h3>From the archive</h3>
-                        {materials.map((m) => (
-                          <a
-                            className="material-mini"
-                            key={m.id}
-                            href={archive.sources.find((s) => s.id === m.sourceId)?.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {m.kind === 'oral-history' ? (
-                              <Headphones size={21} />
-                            ) : (
-                              <BookOpen size={21} />
-                            )}
-                            <span>
-                              <small>
-                                {m.kind === 'oral-history' ? 'ORAL HISTORY' : 'DOCUMENT'}
-                              </small>
-                              <strong>{m.title}</strong>
-                              <small>
-                                {m.creditIds
-                                  .map(
-                                    (id) =>
-                                      archive.credits.find((credit) => credit.id === id)
-                                        ?.displayName,
-                                  )
-                                  .filter(Boolean)
-                                  .join(', ')}{' '}
-                                — {m.title}
-                              </small>
-                            </span>
-                            <ArrowUpRight size={15} />
-                          </a>
-                        ))}
-                      </section>
-                    )}
                   </div>
                   <div className="detail-bottom">
-                    <Link
-                      className="contribute-record"
-                      href={`/people/${selected.id}?edit=1&from=${encodeURIComponent(serializeExploreState(state))}`}
-                      target={state.embed ? '_blank' : undefined}
-                      rel={state.embed ? 'noopener noreferrer' : undefined}
-                    >
-                      {copy.addToPage} <ArrowUpRight size={17} />
-                    </Link>
-                    <p className="quiet-note detail-edit-hint">
-                      Memories, photographs, places, and corrections are added on the profile page,
-                      right where they belong.
-                    </p>
                     <Link
                       className="full-record-link"
                       href={detailHref}
@@ -703,6 +590,14 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                     >
                       Read the full record <ArrowRight size={17} />
                       {state.embed && <span className="sr-only"> (opens in a new tab)</span>}
+                    </Link>
+                    <Link
+                      className="contribute-record"
+                      href={`/people/${selected.id}?edit=1&from=${encodeURIComponent(serializeExploreState(state))}`}
+                      target={state.embed ? '_blank' : undefined}
+                      rel={state.embed ? 'noopener noreferrer' : undefined}
+                    >
+                      {copy.addToPage} <ArrowUpRight size={17} />
                     </Link>
                     <button className="copy-record" onClick={() => copyLink('person')}>
                       {copied ? <Check size={15} /> : <Copy size={15} />}

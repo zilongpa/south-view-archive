@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { Map as MapInstance, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import './location-picker.css';
 import { LoaderCircle, MapPin, Search, X } from 'lucide-react';
 import { cemeteryArea, cemeteryCenter } from '@/lib/cemetery-area';
 
