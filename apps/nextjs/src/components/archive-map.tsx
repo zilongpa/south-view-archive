@@ -31,6 +31,12 @@ export const mapDefaults = {
   atlanta: { center: [-84.3942, 33.7535] as [number, number], zoom: 12.65 },
 };
 
+/** One clustered source per marker kind: graves stay wine, city places stay green. */
+const markerKinds = [
+  { source: 'archive-graves', scope: 'cemetery', color: '#722d3c' },
+  { source: 'archive-places', scope: 'atlanta', color: '#4f5a46' },
+] as const;
+
 export default function ArchiveMap(props: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapInstance | null>(null);
@@ -150,75 +156,81 @@ export default function ArchiveMap(props: Props) {
           },
           paint: { 'text-color': '#652b3a', 'text-halo-color': '#fffcf6', 'text-halo-width': 2 },
         });
-        map.addSource('archive-places', {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features: [] },
-          cluster: true,
-          clusterMaxZoom: 13,
-          clusterRadius: 50,
-        });
-        map.addLayer({
-          id: 'archive-points',
-          type: 'circle',
-          source: 'archive-places',
-          filter: ['!', ['has', 'point_count']],
-          paint: {
-            'circle-radius': 4,
-            'circle-color': '#743444',
-            'circle-stroke-color': '#fffcf6',
-            'circle-stroke-width': 2,
-          },
-        });
-        map.addLayer({
-          id: 'archive-clusters',
-          type: 'circle',
-          source: 'archive-places',
-          filter: ['has', 'point_count'],
-          paint: {
-            'circle-color': '#722d3c',
-            'circle-radius': 22,
-            'circle-stroke-width': 4,
-            'circle-stroke-color': '#fcf8ef',
-          },
-        });
-        map.addLayer({
-          id: 'archive-cluster-count',
-          type: 'symbol',
-          source: 'archive-places',
-          filter: ['has', 'point_count'],
-          layout: {
-            'text-field': ['get', 'point_count_abbreviated'],
-            'text-font': [process.env.NEXT_PUBLIC_MAP_FONT || 'Noto Sans Regular'],
-            'text-size': 14,
-          },
-          paint: { 'text-color': '#fffaf1' },
-        });
-        map.on('click', 'archive-clusters', async (event) => {
-          const feature = event.features?.[0];
-          if (!feature || feature.geometry.type !== 'Point' || !map) return;
-          try {
-            const zoom = await (
-              map.getSource('archive-places') as GeoJSONSource
-            ).getClusterExpansionZoom(Number(feature.properties?.cluster_id));
-            if (!disposed)
-              map.easeTo(
-                {
-                  center: feature.geometry.coordinates as [number, number],
-                  zoom,
-                  duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 500,
-                },
-                { autoScope: true },
-              );
-          } catch {
-            /* A source refresh can invalidate a cluster; the next click uses current data. */
-          }
-        });
-        map.on('mouseenter', 'archive-clusters', () => {
-          if (map) map.getCanvas().style.cursor = 'pointer';
-        });
-        map.on('mouseleave', 'archive-clusters', () => {
-          if (map) map.getCanvas().style.cursor = '';
-        });
+        // Graves and city places cluster separately, each in its own colour, so a zoomed-out
+        // map never folds a grave into a green cluster or a church into a wine one.
+        for (const kind of markerKinds) {
+          map.addSource(kind.source, {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+            cluster: true,
+            clusterMaxZoom: 13,
+            clusterRadius: 60,
+          });
+          map.addLayer({
+            id: `${kind.source}-points`,
+            type: 'circle',
+            source: kind.source,
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+              'circle-radius': 4,
+              'circle-color': kind.color,
+              'circle-stroke-color': '#fffcf6',
+              'circle-stroke-width': 2,
+            },
+          });
+          map.addLayer({
+            id: `${kind.source}-clusters`,
+            type: 'circle',
+            source: kind.source,
+            filter: ['has', 'point_count'],
+            paint: {
+              'circle-color': kind.color,
+              'circle-radius': 22,
+              'circle-stroke-width': 4,
+              'circle-stroke-color': '#fcf8ef',
+            },
+          });
+          map.addLayer({
+            id: `${kind.source}-cluster-count`,
+            type: 'symbol',
+            source: kind.source,
+            filter: ['has', 'point_count'],
+            layout: {
+              'text-field': ['get', 'point_count_abbreviated'],
+              'text-font': [process.env.NEXT_PUBLIC_MAP_FONT || 'Noto Sans Regular'],
+              'text-size': 14,
+            },
+            paint: { 'text-color': '#fffaf1' },
+          });
+          map.on('click', `${kind.source}-clusters`, async (event) => {
+            const feature = event.features?.[0];
+            if (!feature || feature.geometry.type !== 'Point' || !map) return;
+            try {
+              const zoom = await (
+                map.getSource(kind.source) as GeoJSONSource
+              ).getClusterExpansionZoom(Number(feature.properties?.cluster_id));
+              if (!disposed)
+                map.easeTo(
+                  {
+                    center: feature.geometry.coordinates as [number, number],
+                    zoom,
+                    duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                      ? 0
+                      : 500,
+                  },
+                  { autoScope: true },
+                );
+            } catch {
+              /* A source refresh can invalidate a cluster; the next click uses current data. */
+            }
+          });
+          map.on('mouseenter', `${kind.source}-clusters`, () => {
+            if (map) map.getCanvas().style.cursor = 'pointer';
+          });
+          map.on('mouseleave', `${kind.source}-clusters`, () => {
+            if (map) map.getCanvas().style.cursor = '';
+          });
+        }
         setReady(true);
       });
       map.on('moveend', (event) => {
@@ -241,7 +253,8 @@ export default function ArchiveMap(props: Props) {
       });
       map.on('movestart', () => markerHover.startMove());
       map.on('sourcedata', (event) => {
-        if (event.sourceId === 'archive-places' && event.isSourceLoaded) refreshMarkers.current();
+        if (markerKinds.some((kind) => kind.source === event.sourceId) && event.isSourceLoaded)
+          refreshMarkers.current();
       });
       const canvas = map.getCanvas();
       canvas.setAttribute(
@@ -275,29 +288,33 @@ export default function ArchiveMap(props: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const source = map.getSource('archive-places') as GeoJSONSource;
-    source.setData({
-      type: 'FeatureCollection',
-      features: props.places
-        .filter((p) => p.coordinates)
-        .map((p) => ({
-          type: 'Feature' as const,
-          id: p.id,
-          geometry: { type: 'Point' as const, coordinates: p.coordinates! },
-          properties: { placeId: p.id },
-        })),
-    });
+    for (const kind of markerKinds) {
+      const source = map.getSource(kind.source) as GeoJSONSource;
+      source.setData({
+        type: 'FeatureCollection',
+        features: props.places
+          .filter((p) => p.coordinates && p.scope === kind.scope)
+          .map((p) => ({
+            type: 'Feature' as const,
+            id: p.id,
+            geometry: { type: 'Point' as const, coordinates: p.coordinates! },
+            properties: { placeId: p.id },
+          })),
+      });
+    }
   }, [ready, props.places]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const render = () => {
-      if (!mapRef.current || !map.getSource('archive-places')) return;
+      if (!mapRef.current || markerKinds.some((kind) => !map.getSource(kind.source))) return;
       const unclustered = new Set(
-        map
-          .querySourceFeatures('archive-places', { filter: ['!', ['has', 'point_count']] })
-          .map((f) => String(f.properties?.placeId)),
+        markerKinds.flatMap((kind) =>
+          map
+            .querySourceFeatures(kind.source, { filter: ['!', ['has', 'point_count']] })
+            .map((f) => String(f.properties?.placeId)),
+        ),
       );
       const visiblePlaces = current.current.places.filter(
         (p) => p.coordinates && unclustered.has(p.id),
