@@ -165,8 +165,8 @@ Main routes:
 - `/explore?scope=atlanta`: combined Atlanta and South-View view.
 - `/people/john-lewis`: permanent, directly accessible, shareable person page.
 - `/explore?embed=1`: simplified embedded view.
-- `/people/[id]?edit=1`: in-page additions, paragraph edits, places marked on a map, and photographs for an existing person.
-- `/contribute`: proposals for a person not yet in the archive, with a jump to existing person pages.
+- `/people/[id]?edit=1`: in-page additions, paragraph edits, edits to existing places (name, position, description), new places marked on a map, and photographs for an existing person.
+- `/contribute`: one short form for a memory, fact, or photograph about anyone, in the archive or not. `?person=` pre-selects a person; the navigation link passes it from person pages. Once a person is chosen the form offers their known places and hides the new-person fields.
 - `/submissions/[id]#receipt=…`: private receipt, original submission, status, and supplements.
 - `/sign-in`, `/my-contributions`: optional Google sign-in and owned submissions.
 - `/admin/contributions`: separately authorized staff review. Signed-in reviewers also get a **Review desk** link in the navigation.

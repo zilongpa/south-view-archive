@@ -447,6 +447,72 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
       },
     );
     await t.test(
+      'an in-page place edit updates the existing relationship instead of adding a second one',
+      async () => {
+        const before = await getArchive();
+        const relation = before.relations.find((item) => item.personId === 'john-lewis')!;
+        const place = before.places.find((item) => item.id === relation.placeId)!;
+        const receipt = token();
+        const author = { ...guest, receiptToken: receipt };
+        const { submission } = await createDraft(
+          original({
+            kind: 'correction',
+            placeIds: [place.id],
+            body: 'A corrected account of how this place figured in his life, written in place.',
+            placement: {
+              section: 'places',
+              blockId: relation.id,
+              originalText: relation.description,
+              proposedCoordinates: [-84.37, 33.702],
+              proposedScope: 'cemetery',
+            },
+          }),
+          guest,
+          receipt,
+        );
+        await finalizeSubmission(submission.id, author);
+        await reviewSubmission(
+          submission.id,
+          decision({
+            applyTo: 'place',
+            sourceIds: [before.sources[0]!.id],
+            placePatch: {
+              placeId: place.id,
+              name: place.name,
+              scope: 'cemetery',
+              coordinates: [-84.37, 33.702],
+              precision: 'reference',
+              locationNote: 'Moved by a contributor; reference position.',
+              relationship: relation.label,
+            },
+          }),
+          reviewer,
+        );
+        const after = await getArchive();
+        const relationsAfter = after.relations.filter(
+          (item) => item.personId === 'john-lewis' && item.placeId === place.id,
+        );
+        assert.equal(relationsAfter.length, 1);
+        assert.equal(relationsAfter[0]!.id, relation.id);
+        assert.ok(relationsAfter[0]!.description.startsWith('A corrected account'));
+        assert.ok(relationsAfter[0]!.creditIds.includes(`contributor-${submission.id}`));
+        assert.deepEqual(
+          after.places.find((item) => item.id === place.id)!.coordinates,
+          [-84.37, 33.702],
+        );
+        await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
+        const restored = await getArchive();
+        assert.deepEqual(
+          restored.relations.find((item) => item.id === relation.id),
+          relation,
+        );
+        assert.deepEqual(
+          restored.places.find((item) => item.id === place.id),
+          place,
+        );
+      },
+    );
+    await t.test(
       'new people require explicit review, coordinate errors roll back, and dependent publications prevent unsafe withdrawal',
       async () => {
         const receipt = token();

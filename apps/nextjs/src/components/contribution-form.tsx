@@ -141,10 +141,13 @@ const kinds: { value: SubmissionInput['kind']; title: string; text: string }[] =
 export function ContributionForm({
   people,
   places,
+  relations = [],
   initialPersonId,
 }: {
   people: PersonOption[];
   places: PersonOption[];
+  /** Person-place links, so the form can offer the chosen person's known places. */
+  relations?: { personId: string; placeId: string }[];
   initialPersonId?: string;
 }) {
   const [draft, setDraft] = useState<Draft>({
@@ -171,6 +174,18 @@ export function ContributionForm({
     placeCoordinates: null,
   });
   const [sourceKind, setSourceKind] = useState<SourceKind>('memory');
+  const [newPlace, setNewPlace] = useState(false);
+  // What kind of contribution this is follows from the answers, not from a chooser.
+  const effectiveKind: SubmissionInput['kind'] = !draft.personId
+    ? 'new-person'
+    : sourceKind === 'document'
+      ? 'addition'
+      : 'memory';
+  const knownPlaces = draft.personId
+    ? places.filter((place) =>
+        relations.some((link) => link.personId === draft.personId && link.placeId === place.id),
+      )
+    : [];
   const [privateName, setPrivateName] = useState('');
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState(false);
@@ -396,9 +411,9 @@ export function ContributionForm({
   function inputValue(): SubmissionInput {
     return {
       ...draft,
-      personId: draft.kind === 'new-person' || !draft.personId ? null : draft.personId,
-      proposedPersonName:
-        draft.kind === 'new-person' || !draft.personId ? draft.proposedPersonName : '',
+      kind: effectiveKind,
+      personId: draft.personId || null,
+      proposedPersonName: draft.personId ? '' : draft.proposedPersonName,
       privateName,
       email: email.trim(),
       permission: true,
@@ -625,14 +640,11 @@ export function ContributionForm({
     }
   }
 
-  const personName =
-    draft.kind === 'new-person' || !draft.personId
-      ? draft.proposedPersonName
-      : (people.find((person) => person.id === draft.personId)?.name ?? draft.proposedPersonName);
+  const personName = !draft.personId
+    ? draft.proposedPersonName
+    : (people.find((person) => person.id === draft.personId)?.name ?? draft.proposedPersonName);
   const signInNext = safeCommunityNext(
-    draft.kind !== 'new-person' && draft.personId
-      ? `/contribute?person=${encodeURIComponent(draft.personId)}`
-      : '/contribute',
+    draft.personId ? `/contribute?person=${encodeURIComponent(draft.personId)}` : '/contribute',
   );
   return (
     <div className="community-grid">
@@ -700,20 +712,31 @@ export function ContributionForm({
                 <h2>Who are you adding, and what do you know?</h2>
               </div>
               <div className="community-fields">
-                {draft.kind !== 'new-person' && (
-                  <RecordPicker
-                    label="Who is this about?"
-                    options={people}
-                    value={draft.personId ? [draft.personId] : []}
-                    onChange={(ids) => change('personId', ids[0] ?? '')}
-                    placeholder="Search names or alternate names…"
-                    emptyLabel="Someone not listed here"
-                  />
-                )}
-                {(draft.kind === 'new-person' || !draft.personId) && (
+                <RecordPicker
+                  label="Who is this about?"
+                  options={people}
+                  value={draft.personId ? [draft.personId] : []}
+                  onChange={(ids) => {
+                    change('personId', ids[0] ?? '');
+                    change('placeIds', []);
+                  }}
+                  placeholder="Search names or alternate names…"
+                  emptyLabel="Someone not listed here"
+                />
+                {draft.personId ? (
+                  <p className="community-hint community-person-hint">
+                    Everything you add here is reviewed and then shown on {personName}’s page. You
+                    can also{' '}
+                    <Link href={`/people/${encodeURIComponent(draft.personId)}?edit=1`}>
+                      add it right on their page
+                    </Link>
+                    , next to the paragraph or place it belongs to.
+                  </p>
+                ) : (
                   <label className={fieldClass('proposedPersonName')}>
                     <span>
-                      Person’s name <span className="community-required">*</span>
+                      Their name, if they are not in the archive yet{' '}
+                      <span className="community-required">*</span>
                     </span>
                     <input
                       value={draft.proposedPersonName}
@@ -745,11 +768,7 @@ export function ContributionForm({
                 </label>
                 <label className={fieldClass('body')}>
                   <span>
-                    {draft.kind === 'correction'
-                      ? 'What needs correcting, and what should it say?'
-                      : draft.kind === 'memory'
-                        ? 'Your memory'
-                        : 'Your story or contribution'}{' '}
+                    {effectiveKind === 'memory' ? 'Your memory' : 'Your story or contribution'}{' '}
                     <span className="community-required">*</span>
                   </span>
                   <textarea
@@ -783,45 +802,6 @@ export function ContributionForm({
                     It may be shown publicly.
                   </small>
                 </label>
-                <div className="community-field">
-                  <span>
-                    Where are they buried, or a place from their life{' '}
-                    <span className="community-hint">(optional)</span>
-                  </span>
-                  <input
-                    value={draft.placeName}
-                    onChange={(event) => change('placeName', event.target.value)}
-                    maxLength={160}
-                    placeholder="e.g. Section C, South-View Cemetery, or Wheat Street Baptist Church"
-                  />
-                  <LocationPicker
-                    value={
-                      draft.placeCoordinates
-                        ? { coordinates: draft.placeCoordinates, scope: draft.placeScope }
-                        : null
-                    }
-                    onChange={(picked) => {
-                      change('placeCoordinates', picked?.coordinates ?? null);
-                      if (picked) change('placeScope', picked.scope);
-                    }}
-                  />
-                </div>
-                <details className="story-context-details">
-                  <summary>
-                    Connect this story to people, places, and a time{' '}
-                    <span className="community-hint">(optional)</span>
-                  </summary>
-                  <StoryContextFields
-                    people={people}
-                    places={places}
-                    primaryPersonId={draft.kind === 'new-person' ? '' : draft.personId}
-                    value={draft}
-                    onChange={(context) => {
-                      setDraft((previous) => ({ ...previous, ...context }));
-                      setDraftSaved(false);
-                    }}
-                  />
-                </details>
                 <fieldset className="community-fieldset source-kind">
                   <legend>How do you know this?</legend>
                   <div className="source-kind-options">
@@ -961,110 +941,204 @@ export function ContributionForm({
                     )}
                   </div>
                 </fieldset>
+                <div className="community-field">
+                  <span>
+                    {knownPlaces.length
+                      ? 'Is this about one of their places?'
+                      : 'Where are they buried, or a place from their life'}{' '}
+                    <span className="community-hint">(optional)</span>
+                  </span>
+                  {knownPlaces.length > 0 && (
+                    <div className="community-place-choices">
+                      {knownPlaces.map((place) => (
+                        <label className="community-check" key={place.id}>
+                          <input
+                            type="checkbox"
+                            checked={draft.placeIds.includes(place.id)}
+                            onChange={(event) =>
+                              change(
+                                'placeIds',
+                                event.target.checked
+                                  ? [...draft.placeIds, place.id]
+                                  : draft.placeIds.filter((id) => id !== place.id),
+                              )
+                            }
+                          />
+                          <span>
+                            {place.name}
+                            <small>
+                              {place.scope === 'cemetery' ? 'South-View Cemetery' : 'Atlanta'}
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                      <label className="community-check">
+                        <input
+                          type="checkbox"
+                          checked={newPlace}
+                          onChange={(event) => {
+                            setNewPlace(event.target.checked);
+                            if (!event.target.checked) {
+                              change('placeName', '');
+                              change('placeCoordinates', null);
+                            }
+                          }}
+                        />
+                        <span>A place not listed here</span>
+                      </label>
+                    </div>
+                  )}
+                  {(!knownPlaces.length || newPlace) && (
+                    <>
+                      <input
+                        value={draft.placeName}
+                        onChange={(event) => change('placeName', event.target.value)}
+                        maxLength={160}
+                        placeholder="e.g. Section C, South-View Cemetery, or Wheat Street Baptist Church"
+                        aria-label="Place name"
+                      />
+                      <LocationPicker
+                        value={
+                          draft.placeCoordinates
+                            ? { coordinates: draft.placeCoordinates, scope: draft.placeScope }
+                            : null
+                        }
+                        onChange={(picked) => {
+                          change('placeCoordinates', picked?.coordinates ?? null);
+                          if (picked) change('placeScope', picked.scope);
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
             </section>
+            <details className="story-context-details community-more">
+              <summary>
+                Add more{' '}
+                <span className="community-hint">
+                  (optional: photographs, other people, when it happened)
+                </span>
+              </summary>
+              <div className="community-fields" style={{ margin: '16px 0 0' }}>
+                <StoryContextFields
+                  people={people}
+                  places={places}
+                  primaryPersonId={draft.personId}
+                  value={draft}
+                  showPlaces={false}
+                  onChange={(context) => {
+                    setDraft((previous) => ({ ...previous, ...context }));
+                    setDraftSaved(false);
+                  }}
+                />
+              </div>
+              <section className="community-section">
+                <div className="community-section-heading">
+                  <h2>
+                    Photographs <span className="community-hint">(optional)</span>
+                  </h2>
+                </div>
+                <p className="community-section-note">
+                  Up to five JPEG, PNG, or WebP images, no more than 10 MB each. A portrait is
+                  welcome. Each photograph needs a caption, a creator, and your permission.
+                </p>
+                <div className="community-upload">
+                  <ImagePlus size={30} strokeWidth={1.3} />
+                  <strong>A face, a place, a moment remembered.</strong>
+                  <p className="community-hint">
+                    Include only photographs you have permission to share.
+                  </p>
+                  <input
+                    aria-label="Choose photographs"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    onChange={(event) => {
+                      addPhotos(event.target.files);
+                      event.target.value = '';
+                    }}
+                    disabled={photos.length >= 5 || recovering || recoveryBlocked}
+                  />
+                </div>
+                <div className="community-photo-list">
+                  {photos.map((photo, index) => (
+                    <div className="community-photo" key={photo.preview}>
+                      <img src={photo.preview} alt={`Your selected photograph ${index + 1}`} />
+                      <div className="community-photo-meta">
+                        <strong>{photo.name}</strong>
+                        {photo.uploadedId && (
+                          <p className="community-hint">
+                            Saved to your private draft. Remove and add it again to change its
+                            caption or permissions.
+                          </p>
+                        )}
+                        <label className="community-field">
+                          <span>Caption *</span>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            value={photo.metadata.caption}
+                            onChange={(event) =>
+                              updatePhoto(index, { caption: event.target.value })
+                            }
+                            required
+                            maxLength={500}
+                            placeholder="e.g. The Hill family at the South-View gate, about 1960"
+                          />
+                        </label>
+                        <label className="community-field">
+                          <span>Photographer or creator *</span>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            value={photo.metadata.creator}
+                            onChange={(event) =>
+                              updatePhoto(index, { creator: event.target.value })
+                            }
+                            required
+                            maxLength={160}
+                            placeholder="e.g. Ruth Hill, or “family collection”, or “unknown”"
+                          />
+                        </label>
+                        <label className="community-field">
+                          <span>Rights and permission *</span>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            value={photo.metadata.rights}
+                            onChange={(event) => updatePhoto(index, { rights: event.target.value })}
+                            required
+                            maxLength={1000}
+                            placeholder="e.g. Owned by our family; South-View may display it online"
+                          />
+                        </label>
+                        <label className="community-check" style={{ marginTop: 14 }}>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            type="checkbox"
+                            checked={photo.metadata.permission}
+                            onChange={(event) =>
+                              updatePhoto(index, { permission: event.target.checked })
+                            }
+                            required
+                          />
+                          <span>I have permission for South-View to display this photograph.</span>
+                        </label>
+                        <button
+                          className="community-text-button"
+                          type="button"
+                          disabled={photoBusy}
+                          onClick={() => removePhoto(index)}
+                        >
+                          <Trash2 size={14} aria-hidden="true" /> Remove photograph
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </details>
             <section className="community-section">
               <div className="community-section-heading">
                 <span className="community-step">02</span>
-                <h2>
-                  Photographs <span className="community-hint">(optional)</span>
-                </h2>
-              </div>
-              <p className="community-section-note">
-                Up to five JPEG, PNG, or WebP images, no more than 10 MB each. Each photograph needs
-                a caption, a creator, and your permission.
-              </p>
-              <div className="community-upload">
-                <ImagePlus size={30} strokeWidth={1.3} />
-                <strong>A face, a place, a moment remembered.</strong>
-                <p className="community-hint">
-                  Include only photographs you have permission to share.
-                </p>
-                <input
-                  aria-label="Choose photographs"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  onChange={(event) => {
-                    addPhotos(event.target.files);
-                    event.target.value = '';
-                  }}
-                  disabled={photos.length >= 5 || recovering || recoveryBlocked}
-                />
-              </div>
-              <div className="community-photo-list">
-                {photos.map((photo, index) => (
-                  <div className="community-photo" key={photo.preview}>
-                    <img src={photo.preview} alt={`Your selected photograph ${index + 1}`} />
-                    <div className="community-photo-meta">
-                      <strong>{photo.name}</strong>
-                      {photo.uploadedId && (
-                        <p className="community-hint">
-                          Saved to your private draft. Remove and add it again to change its caption
-                          or permissions.
-                        </p>
-                      )}
-                      <label className="community-field">
-                        <span>Caption *</span>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          value={photo.metadata.caption}
-                          onChange={(event) => updatePhoto(index, { caption: event.target.value })}
-                          required
-                          maxLength={500}
-                          placeholder="e.g. The Hill family at the South-View gate, about 1960"
-                        />
-                      </label>
-                      <label className="community-field">
-                        <span>Photographer or creator *</span>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          value={photo.metadata.creator}
-                          onChange={(event) => updatePhoto(index, { creator: event.target.value })}
-                          required
-                          maxLength={160}
-                          placeholder="e.g. Ruth Hill, or “family collection”, or “unknown”"
-                        />
-                      </label>
-                      <label className="community-field">
-                        <span>Rights and permission *</span>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          value={photo.metadata.rights}
-                          onChange={(event) => updatePhoto(index, { rights: event.target.value })}
-                          required
-                          maxLength={1000}
-                          placeholder="e.g. Owned by our family; South-View may display it online"
-                        />
-                      </label>
-                      <label className="community-check" style={{ marginTop: 14 }}>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          type="checkbox"
-                          checked={photo.metadata.permission}
-                          onChange={(event) =>
-                            updatePhoto(index, { permission: event.target.checked })
-                          }
-                          required
-                        />
-                        <span>I have permission for South-View to display this photograph.</span>
-                      </label>
-                      <button
-                        className="community-text-button"
-                        type="button"
-                        disabled={photoBusy}
-                        onClick={() => removePhoto(index)}
-                      >
-                        <Trash2 size={14} aria-hidden="true" /> Remove photograph
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="community-section">
-              <div className="community-section-heading">
-                <span className="community-step">03</span>
                 <h2>Your name and your public credit</h2>
               </div>
               <div className="community-fields">
@@ -1163,7 +1237,7 @@ export function ContributionForm({
             </div>
             <div className="community-review-line">
               <strong>Contribution type</strong>
-              {kinds.find((kind) => kind.value === draft.kind)?.title}
+              {kinds.find((kind) => kind.value === effectiveKind)?.title}
             </div>
             <p className="community-body">{draft.body}</p>
             <div className="community-review-line">
@@ -1176,8 +1250,7 @@ export function ContributionForm({
                 {people
                   .filter(
                     (person) =>
-                      draft.relatedPersonIds.includes(person.id) &&
-                      (draft.kind === 'new-person' || person.id !== draft.personId),
+                      draft.relatedPersonIds.includes(person.id) && person.id !== draft.personId,
                   )
                   .map((person) => person.name)
                   .join('; ')}

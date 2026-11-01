@@ -195,3 +195,42 @@ test('a place marked on the map travels as a proposed position, unless an existi
   assert.equal(hostile?.blocks[0]?.coordinates, null);
   assert.equal(hostile?.blocks[0]?.scope, undefined);
 });
+
+test('editing an existing place sends only what changed, and refuses a no-op', () => {
+  const existing = block({
+    section: 'places',
+    kind: 'correction',
+    anchor: 'relation-1',
+    originalText: 'He preached here every Sunday for twenty years.',
+    originalName: 'Wheat Street Baptist Church',
+    originalCoordinates: [-84.38, 33.755],
+    body: 'He preached here every Sunday for twenty years.',
+    placeIds: ['wheat-street'],
+    proposedPlaceName: 'Wheat Street Baptist Church',
+    coordinates: [-84.38, 33.755],
+    scope: 'atlanta',
+  });
+  assert.equal(validateBlock(existing)[0]?.field, 'place');
+  const moved = { ...existing, coordinates: [-84.381, 33.7552] as [number, number] };
+  assert.deepEqual(validateBlock(moved), []);
+  const input = submissionInputSchema.parse(blockToSubmissionInput(moved, person, contact));
+  assert.equal(input.kind, 'correction');
+  assert.deepEqual(input.placeIds, ['wheat-street']);
+  assert.equal(input.title, "Correction to a place in John Lewis's life");
+  assert.deepEqual(input.placement, {
+    section: 'places',
+    blockId: 'relation-1',
+    originalText: 'He preached here every Sunday for twenty years.',
+    proposedCoordinates: [-84.381, 33.7552],
+    proposedScope: 'atlanta',
+  });
+  const renamed = { ...existing, proposedPlaceName: 'Wheat Street Baptist Church (historic)' };
+  const renamedInput = blockToSubmissionInput(renamed, person, contact);
+  assert.equal(renamedInput.placement?.proposedPlaceName, 'Wheat Street Baptist Church (historic)');
+  assert.equal(renamedInput.placement?.proposedCoordinates, undefined);
+  const restored = restoreEditSession(
+    JSON.parse(serializeEditSession({ receiptToken: 'r'.repeat(72), blocks: [moved] })),
+  );
+  assert.deepEqual(restored?.blocks[0]?.originalCoordinates, [-84.38, 33.755]);
+  assert.equal(restored?.blocks[0]?.originalName, 'Wheat Street Baptist Church');
+});

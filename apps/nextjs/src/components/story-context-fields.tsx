@@ -11,12 +11,14 @@ export function StoryContextFields({
   primaryPersonId,
   value,
   onChange,
+  showPlaces = true,
 }: {
   people: RecordOption[];
   places: RecordOption[];
   primaryPersonId: string;
   value: StoryContext;
   onChange: (next: StoryContext) => void;
+  showPlaces?: boolean;
 }) {
   const id = useId();
   const date = value.eventDate;
@@ -30,6 +32,7 @@ export function StoryContextFields({
         value={value.relatedPersonIds.filter((key) => key !== primaryPersonId)}
         onChange={(ids) => onChange({ ...value, relatedPersonIds: ids })}
       />
+      {showPlaces && (
       <div>
         <RecordPicker
           label="Places mentioned (optional)"
@@ -44,6 +47,7 @@ export function StoryContextFields({
           a precise location.
         </p>
       </div>
+      )}
       <fieldset>
         <legend>When did the event or memory take place?</legend>
         <label className="community-field" htmlFor={`${id}-kind`}>

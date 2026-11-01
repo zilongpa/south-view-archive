@@ -44,12 +44,41 @@ const prompts: Record<
   },
 };
 
+/** An existing place relationship on the page, offered for editing in place. */
+export type ExistingPlace = {
+  relationId: string;
+  placeId: string;
+  name: string;
+  description: string;
+  coordinates: [number, number] | null;
+  scope: 'cemetery' | 'atlanta';
+};
+
 function emptyBlock(
   section: EditSection,
   kind: EditKind,
   anchor?: string,
   original?: string,
+  place?: ExistingPlace,
 ): EditBlock {
+  if (place)
+    return {
+      id: crypto.randomUUID(),
+      section: 'places',
+      kind: 'correction',
+      anchor: place.relationId,
+      originalText: place.description,
+      originalName: place.name,
+      originalCoordinates: place.coordinates,
+      title: '',
+      body: place.description,
+      context: '',
+      placeIds: [place.placeId],
+      proposedPlaceName: place.name,
+      coordinates: place.coordinates,
+      scope: place.scope,
+      photos: [],
+    };
   return {
     id: crypto.randomUUID(),
     section,
@@ -70,6 +99,7 @@ export function InlineForm({
   kind,
   anchor,
   original,
+  place,
   initial,
   personName,
   places,
@@ -80,6 +110,7 @@ export function InlineForm({
   kind: EditKind;
   anchor?: string;
   original?: string;
+  place?: ExistingPlace;
   initial?: EditBlock;
   personName: string;
   places: RecordOption[];
@@ -88,9 +119,15 @@ export function InlineForm({
 }) {
   const id = useId();
   const [block, setBlock] = useState<EditBlock>(
-    () => initial ?? emptyBlock(section, kind, anchor, original),
+    () => initial ?? emptyBlock(section, kind, anchor, original, place),
   );
   const correction = kind === 'correction';
+  const placeEdit = section === 'places' && correction;
+  const heading = placeEdit
+    ? 'Edit this place'
+    : correction
+      ? 'Edit this paragraph'
+      : prompts[section].heading;
   const [issues, setIssues] = useState<BlockIssue[]>([]);
   const first = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -160,7 +197,7 @@ export function InlineForm({
   return (
     <form
       className="person-edit-form"
-      aria-label={correction ? 'Edit this paragraph' : prompt.heading}
+      aria-label={heading}
       onSubmit={(event) => {
         event.preventDefault();
         save();
@@ -168,12 +205,43 @@ export function InlineForm({
       noValidate
     >
       <div className="person-edit-form-head">
-        <strong>{correction ? 'Edit this paragraph' : prompt.heading}</strong>
+        <strong>{heading}</strong>
         <button type="button" className="community-text-button" onClick={onCancel}>
           <X size={15} aria-hidden="true" /> Cancel
         </button>
       </div>
-      {section === 'places' && (
+      {placeEdit && (
+        <div className={`community-field ${issue('place') ? 'has-error' : ''}`}>
+          <label className="community-field">
+            <span>
+              Place name <span className="community-required">*</span>
+            </span>
+            <input
+              value={block.proposedPlaceName}
+              onChange={(event) => patch({ proposedPlaceName: event.target.value })}
+              maxLength={160}
+            />
+          </label>
+          <LocationPicker
+            label="Move the pin if the position is wrong"
+            hint="Drag the pin, tap a new spot, or search an address. Leave it where it is if only the text needs changing."
+            value={
+              block.coordinates
+                ? { coordinates: block.coordinates, scope: block.scope ?? 'cemetery' }
+                : null
+            }
+            onChange={(picked) =>
+              patch({ coordinates: picked?.coordinates ?? null, scope: picked?.scope })
+            }
+          />
+          {issue('place') && (
+            <small className="community-field-error" role="alert">
+              {issue('place')}
+            </small>
+          )}
+        </div>
+      )}
+      {section === 'places' && !placeEdit && (
         <div className={`community-field ${issue('place') ? 'has-error' : ''}`}>
           <RecordPicker
             label="Which place?"
@@ -296,7 +364,11 @@ export function InlineForm({
       )}
       <label className={`community-field ${issue('body') ? 'has-error' : ''}`}>
         <span>
-          {correction ? 'The paragraph, as you would like it to read' : prompt.body}{' '}
+          {placeEdit
+            ? 'How this place was part of their life, as it should read'
+            : correction
+              ? 'The paragraph, as you would like it to read'
+              : prompt.body}{' '}
           <span className="community-required">*</span>
         </span>
         <textarea
@@ -312,9 +384,11 @@ export function InlineForm({
           </small>
         )}
         <small>
-          {correction
-            ? 'Change the text directly. Reviewers see your version beside the current one and can apply it with one click.'
-            : prompt.bodyHint}
+          {placeEdit
+            ? 'Fix the name, the position, or the description. Reviewers see what changed and can apply it with one click.'
+            : correction
+              ? 'Change the text directly. Reviewers see your version beside the current one and can apply it with one click.'
+              : prompt.bodyHint}
         </small>
       </label>
       {prompt.context && (
@@ -350,7 +424,7 @@ export function InlineForm({
       </label>
       <div className="community-actions" style={{ marginTop: 4 }}>
         <button className="community-primary" type="submit">
-          {initial ? 'Save changes' : 'Add to page'} <ArrowRight size={16} aria-hidden="true" />
+          {initial ? 'Save changes' : correction ? 'Keep this edit' : 'Add to page'} <ArrowRight size={16} aria-hidden="true" />
         </button>
       </div>
     </form>

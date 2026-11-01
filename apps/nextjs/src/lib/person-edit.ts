@@ -20,8 +20,11 @@ export type EditBlock = {
   kind: EditKind;
   /** Biography block id (or index) the block follows or corrects. */
   anchor?: string;
-  /** For corrections: the paragraph text as it was when the visitor started editing it. */
+  /** For corrections: the paragraph or place description as it was when editing started. */
   originalText?: string;
+  /** For place edits: the place's name and position as they were, to detect what changed. */
+  originalName?: string;
+  originalCoordinates?: [number, number] | null;
   title: string;
   body: string;
   context: string;
@@ -60,6 +63,8 @@ export function sectionLabel(section: EditSection) {
 
 /** A title reviewers will recognise when the contributor left the field empty. */
 export function defaultBlockTitle(block: Pick<EditBlock, 'section' | 'kind'>, personName: string) {
+  if (block.kind === 'correction' && block.section === 'places')
+    return `Correction to a place in ${personName}'s life`;
   if (block.kind === 'correction') return `Correction to ${personName}'s story`;
   if (block.section === 'places') return `A place in ${personName}'s life`;
   if (block.section === 'portrait') return `A photograph of ${personName}`;
@@ -79,10 +84,25 @@ export function validateBlock(block: EditBlock): BlockIssue[] {
     });
   if (block.body.trim().length < 20)
     issues.push({ field: 'body', message: 'Write at least 20 characters.' });
-  else if (block.kind === 'correction' && block.body.trim() === block.originalText?.trim())
+  else if (
+    block.kind === 'correction' &&
+    block.section !== 'places' &&
+    block.body.trim() === block.originalText?.trim()
+  )
     issues.push({ field: 'body', message: 'Change the paragraph, or cancel.' });
   if (block.section === 'places' && !block.placeIds.length && !block.proposedPlaceName.trim())
     issues.push({ field: 'place', message: 'Choose a place, or name one not listed yet.' });
+  if (
+    block.section === 'places' &&
+    block.kind === 'correction' &&
+    block.body.trim() === block.originalText?.trim() &&
+    block.proposedPlaceName.trim() === block.originalName &&
+    (!block.coordinates || sameCoordinates(block.coordinates, block.originalCoordinates))
+  )
+    issues.push({
+      field: 'place',
+      message: 'Change the name, the position, or the description, or cancel.',
+    });
   if (block.section === 'portrait' && !block.photos.length)
     issues.push({ field: 'photos', message: 'Choose the photograph you want to add.' });
   if (block.photos.length > MAX_BLOCK_PHOTOS)
@@ -100,6 +120,9 @@ export function validateBlock(block: EditBlock): BlockIssue[] {
   return issues;
 }
 
+const sameCoordinates = (a: [number, number], b?: [number, number] | null) =>
+  !!b && Math.abs(a[0] - b[0]) < 1e-7 && Math.abs(a[1] - b[1]) < 1e-7;
+
 export function blockToSubmissionInput(
   block: EditBlock,
   person: { id: string; name: string },
@@ -111,10 +134,12 @@ export function blockToSubmissionInput(
     ...(block.kind === 'correction' && block.originalText
       ? { originalText: block.originalText }
       : {}),
-    ...(block.proposedPlaceName.trim()
+    ...(block.proposedPlaceName.trim() && block.proposedPlaceName.trim() !== block.originalName
       ? { proposedPlaceName: block.proposedPlaceName.trim() }
       : {}),
-    ...(block.coordinates && !block.placeIds.length
+    ...(block.coordinates &&
+    (!block.placeIds.length || block.kind === 'correction') &&
+    !sameCoordinates(block.coordinates, block.originalCoordinates)
       ? { proposedCoordinates: block.coordinates, proposedScope: block.scope ?? 'cemetery' }
       : {}),
   };
@@ -178,6 +203,9 @@ export function restoreEditSession(value: unknown): EditSession | null {
       anchor: typeof block.anchor === 'string' ? block.anchor.slice(0, 120) : undefined,
       originalText:
         typeof block.originalText === 'string' ? block.originalText.slice(0, 20000) : undefined,
+      originalName:
+        typeof block.originalName === 'string' ? block.originalName.slice(0, 160) : undefined,
+      originalCoordinates: restoreCoordinates(block.originalCoordinates),
       coordinates: restoreCoordinates(block.coordinates),
       scope: block.scope === 'atlanta' || block.scope === 'cemetery' ? block.scope : undefined,
       title: text(block.title, 160),

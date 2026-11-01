@@ -459,7 +459,9 @@ export function OriginalSubmission({
         )}
         {record.input.placement?.originalText && (
           <div>
-            <dt>Paragraph as it was</dt>
+            <dt>
+              {record.input.placement.section === 'places' ? 'As it was' : 'Paragraph as it was'}
+            </dt>
             <dd className="review-original-paragraph">{record.input.placement.originalText}</dd>
           </div>
         )}

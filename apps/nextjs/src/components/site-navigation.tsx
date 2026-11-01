@@ -112,7 +112,7 @@ export function SiteNavigation({
       key={href}
       className={account ? styles.account : undefined}
       href={
-        href === '/contribute' && personId ? `/people/${encodeURIComponent(personId)}?edit=1` : href
+        href === '/contribute' && personId ? `/contribute?person=${encodeURIComponent(personId)}` : href
       }
       aria-current={active === href ? 'page' : undefined}
       target={embed ? '_blank' : undefined}

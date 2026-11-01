@@ -2,7 +2,7 @@
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { copy } from '@/lib/copy';
 import { sectionLabel, type EditBlock, type EditKind, type EditSection } from '@/lib/person-edit';
-import { InlineForm } from './inline-form';
+import { InlineForm, type ExistingPlace } from './inline-form';
 import { sameSlot, usePersonEdit } from './context';
 
 /**
@@ -14,6 +14,7 @@ export function AddSlot({
   section,
   anchor,
   original,
+  place,
   addLabel,
   correctionLabel,
 }: {
@@ -21,6 +22,8 @@ export function AddSlot({
   anchor?: string;
   /** The biography paragraph this slot follows, offered for in-place editing. */
   original?: string;
+  /** An existing place relationship this slot edits instead of adding a new place. */
+  place?: ExistingPlace;
   addLabel?: string;
   correctionLabel?: string;
 }) {
@@ -56,6 +59,7 @@ export function AddSlot({
           kind={editingBlock?.kind ?? edit.activeKind}
           anchor={anchor}
           original={original}
+          place={place}
           initial={editingBlock}
           personName={edit.person.name}
           places={edit.places}
@@ -63,7 +67,18 @@ export function AddSlot({
           onCancel={edit.closeSlot}
         />
       )}
-      {!active && edit.phase === 'edit' && (
+      {!active && edit.phase === 'edit' && place && (
+        <div className="person-edit-actions" role="group" aria-label={place.name}>
+          <button
+            type="button"
+            className="person-edit-add"
+            onClick={() => edit.openSlot(slot, 'correction')}
+          >
+            <Pencil size={14} aria-hidden="true" /> Edit this place
+          </button>
+        </div>
+      )}
+      {!active && edit.phase === 'edit' && !place && (
         <div className="person-edit-actions" role="group" aria-label={sectionLabel(section)}>
           <button
             type="button"
@@ -99,7 +114,9 @@ function DraftBlock({ block }: { block: EditBlock }) {
         {preview
           ? copy.awaitingReview
           : block.kind === 'correction'
-            ? 'Edited paragraph · not sent yet'
+            ? block.section === 'places'
+              ? 'Edited place · not sent yet'
+              : 'Edited paragraph · not sent yet'
             : 'Addition · not sent yet'}
       </p>
       {block.proposedPlaceName && <strong>{block.proposedPlaceName}</strong>}

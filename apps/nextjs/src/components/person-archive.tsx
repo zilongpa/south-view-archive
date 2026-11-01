@@ -299,6 +299,18 @@ export function PersonArchive({
                           This relationship is documented; a map position is not yet available.
                         </p>
                       )}
+                      <AddSlot
+                        section="places"
+                        anchor={relation.id}
+                        place={{
+                          relationId: relation.id,
+                          placeId: place.id,
+                          name: place.name,
+                          description: relation.description,
+                          coordinates: place.coordinates,
+                          scope: place.scope,
+                        }}
+                      />
                     </div>
                   );
                 })}

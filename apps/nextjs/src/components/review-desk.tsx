@@ -77,17 +77,22 @@ function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraf
   const placement = record.input.placement;
   if (placement?.section !== 'places') return empty;
   const existing = archive.places.find((place) => record.input.placeIds.includes(place.id));
-  if (existing)
+  if (existing) {
+    const moved = placement.proposedCoordinates;
+    const relation = archive.relations.find((item) => item.id === placement.blockId);
     return {
       id: existing.id,
-      name: existing.name,
-      scope: existing.scope,
-      lng: existing.coordinates ? String(existing.coordinates[0]) : '',
-      lat: existing.coordinates ? String(existing.coordinates[1]) : '',
-      precision: existing.precision,
-      note: existing.locationNote,
-      relationship: record.input.title,
+      name: placement.proposedPlaceName ?? existing.name,
+      scope: placement.proposedScope ?? existing.scope,
+      lng: moved ? String(moved[0]) : existing.coordinates ? String(existing.coordinates[0]) : '',
+      lat: moved ? String(moved[1]) : existing.coordinates ? String(existing.coordinates[1]) : '',
+      precision: moved ? 'reference' : existing.precision,
+      note: moved
+        ? `Position moved by the contributor; not independently verified. Previously: ${existing.locationNote}`
+        : existing.locationNote,
+      relationship: relation?.label ?? record.input.title,
     };
+  }
   const coordinates = placement.proposedCoordinates;
   return {
     ...empty,
@@ -111,6 +116,14 @@ function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['ap
         ? 'edited an existing paragraph in place. Publishing to the biography replaces that paragraph with the text above'
         : 'wrote this under a specific paragraph. Publishing to the biography inserts it right after that paragraph';
     return `The contributor ${where}${applyTo === 'biography' ? '.' : '; the current choice keeps it as a separate entry.'}`;
+  }
+  if (placement.section === 'places' && record.input.kind === 'correction') {
+    const changes = [
+      placement.proposedPlaceName ? 'renamed it' : '',
+      placement.proposedCoordinates ? 'moved its pin' : '',
+      placement.originalText ? 'rewrote how it relates to this person' : '',
+    ].filter(Boolean);
+    return `The contributor edited an existing place in place${changes.length ? ` and ${changes.join(', ')}` : ''}. Publishing as a map place update changes that place and its link to this person; the earlier version stays recoverable by withdrawal.`;
   }
   if (placement.section === 'places')
     return placement.proposedCoordinates

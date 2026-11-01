@@ -1080,3 +1080,34 @@
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Short form: the chosen person's known places, and the folded "Add more" drawer. */
+.community-place-choices {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.community-place-choices .community-check small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.community-person-hint {
+  margin: -4px 0 4px;
+  line-height: 1.5;
+}
+.community-person-hint a {
+  color: var(--wine);
+}
+.community-more {
+  margin-top: 18px;
+}
+.community-more > summary {
+  font-size: 16px;
+  font-weight: 600;
+}
+.community-more .community-section {
+  margin-top: 14px;
+  padding-top: 0;
+  border-top: 0;
+}

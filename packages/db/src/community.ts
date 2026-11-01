@@ -646,15 +646,34 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       ],
     });
     await saveProjection(tx, row.id, reviewId, 'places', place);
-    const relationId = `relation-${row.id}`;
+    // An in-page edit of an existing place keeps that relationship's id so nothing is duplicated.
+    const edited =
+      input.kind === 'correction' && input.placement?.blockId
+        ? (
+            await tx.query<{
+              data: {
+                personId?: string;
+                placeId?: string;
+                citations?: { sourceId: string }[];
+                creditIds?: string[];
+              };
+            }>('SELECT data FROM archive.person_places WHERE id = $1', [input.placement.blockId])
+          ).rows[0]?.data
+        : undefined;
+    const reuse = !!edited && edited.personId === personId && edited.placeId === place.id;
     const relation = relationSchema.parse({
-      id: relationId,
+      id: reuse ? input.placement!.blockId : `relation-${row.id}`,
       personId,
       placeId: place.id,
       label: patch.relationship,
       description: body,
-      citations,
-      creditIds: [creditId],
+      citations: reuse
+        ? [...(edited.citations ?? []), ...citations].filter(
+            (citation, i, all) =>
+              all.findIndex((other) => other.sourceId === citation.sourceId) === i,
+          )
+        : citations,
+      creditIds: reuse ? [...new Set([...(edited.creditIds ?? []), creditId])] : [creditId],
     });
     await saveProjection(tx, row.id, reviewId, 'person_places', relation);
   }

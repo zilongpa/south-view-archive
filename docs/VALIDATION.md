@@ -4,6 +4,14 @@ Initial date: 2026-10-03. Environment: Windows, Node 24.19.0, pnpm 11.19.0, Next
 
 This is a historical record of the checks below, with later dated updates. Translation into English on 2026-10-19 does not imply that application tests or live-service checks were rerun. Screenshot paths refer to local validation artifacts under `docs/screenshots/`; those images are excluded from the private GitHub source snapshot.
 
+## Place edits, an always-working Share a story, and the short form · 2026-11-01
+
+- **Edit this place.** Each connected place on a person page gets "Edit this place" in edit mode: the name, the pin, and the description are pre-filled; the block is refused until something changes. Only what changed travels (`placement.proposedPlaceName`, `proposedCoordinates`, `originalText`), with the relationship id as the anchor. The review desk starts on "map place update" with the contributor's name and position filled in and the relationship label kept; publication updates the existing person-place relationship instead of adding a second one, merging citations and credits. Withdrawal restores the previous place and relationship (`tests/community-backend.test.ts`).
+- **Share a story always opens the form.** The navigation link goes to `/contribute`, with `?person=` from person pages. The form pre-selects that person, says the story will appear on their page, and links to in-page editing as the alternative. Choosing "Someone not listed here" reveals the name field; the contribution kind follows from the answers instead of a chooser.
+- **Short form.** Step 01 holds who, what, and how you know it; places are offered as the chosen person's known places (or a name plus the map picker for someone new); photographs, other people, and the date fold into one "Add more" drawer; step 02 is name and credit. The separate person jump component was removed.
+
+Verified locally on 2026-11-01: all six workspace type checks, 124 tests, and a production build. In the browser: "Edit this place" opens pre-filled with the pin on the current position; `/contribute?person=john-lewis` arrives with the person selected, two known places plus "A place not listed here", no name field, and the "Add more" drawer closed; the navigation link on a person page points at `/contribute?person=john-lewis`. Note for local work: running `next dev` with `--hostname ::` left pages unhydrated in the app's browser pane, so the preview config keeps the project's `pnpm dev` (127.0.0.1); use that host in a browser too.
+
 ## In-page edits, map picker, and reviewer entry · 2026-10-31
 
 Follow-up to the 2026-10-28 round, after the team settled on keeping the contribution model and adding the parts of the parallel profile proposal that still mattered.
