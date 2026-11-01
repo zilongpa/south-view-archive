@@ -319,6 +319,10 @@ export function ContributionForm({
             'holdingInstitution',
             'savedSubmissionId',
           ] as const;
+          // A person named in the URL wins over the saved draft's person: the reader arrived
+          // from that person's page, and the picker must agree with the address bar. The
+          // draft's places belong to its own person, so they are dropped when the person changes.
+          const samePerson = !initialPersonId || candidate.personId === initialPersonId;
           setDraft((previous) => ({
             ...previous,
             ...Object.fromEntries(
@@ -326,11 +330,12 @@ export function ContributionForm({
                 .filter((key) => typeof candidate[key] === 'string')
                 .map((key) => [key, candidate[key]]),
             ),
+            ...(samePerson ? {} : { personId: initialPersonId }),
             kind: 'new-person',
             anonymous: candidate.anonymous === true,
             links: restoreLinks(candidate.links),
             relatedPersonIds: linkedRecordIdsSchema.catch([]).parse(candidate.relatedPersonIds),
-            placeIds: linkedRecordIdsSchema.catch([]).parse(candidate.placeIds),
+            placeIds: samePerson ? linkedRecordIdsSchema.catch([]).parse(candidate.placeIds) : [],
             eventDate: restoreDraftEventDate(candidate.eventDate),
             placeName: typeof candidate.placeName === 'string' ? candidate.placeName : '',
             placeScope: candidate.placeScope === 'atlanta' ? 'atlanta' : 'cemetery',
@@ -717,8 +722,17 @@ export function ContributionForm({
                   options={people}
                   value={draft.personId ? [draft.personId] : []}
                   onChange={(ids) => {
-                    change('personId', ids[0] ?? '');
+                    const personId = ids[0] ?? '';
+                    change('personId', personId);
                     change('placeIds', []);
+                    // Keep the address bar honest so a reload or a shared link opens the same person.
+                    window.history.replaceState(
+                      null,
+                      '',
+                      personId
+                        ? `/contribute?person=${encodeURIComponent(personId)}`
+                        : '/contribute',
+                    );
                   }}
                   placeholder="Search names or alternate names…"
                   emptyLabel="Someone not listed here"
