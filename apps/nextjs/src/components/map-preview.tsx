@@ -3,6 +3,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { Person, Place } from '@southview/validators';
 import { previewPosition, type PreviewTarget } from '@/lib/explore-preview';
+import { peopleLine } from '@/lib/people-line';
 import { displayPersonName } from '@/lib/person-name';
 
 export function MapPreview({
@@ -63,7 +64,7 @@ export function MapPreview({
           <h3>{place.name}</h3>
           <span className="preview-place">
             {place.scope === 'cemetery' ? 'Grave marker' : 'Place'}
-            {people.length ? ` · ${people.map(displayPersonName).join(', ')}` : ''}
+            {people.length ? ` · ${peopleLine(people)}` : ''}
           </span>
           <p>{place.summary || person.summary}</p>
         </>

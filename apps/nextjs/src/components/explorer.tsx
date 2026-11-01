@@ -22,6 +22,7 @@ import {
 import './explorer-map.css';
 import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
+import { soleOccupant } from '@/lib/place-mode';
 import {
   searchArchive,
   scopeIncludesPlace,
@@ -194,7 +195,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     () => [...new Set(archive.people.flatMap((p) => p.themes))].sort(),
     [archive],
   );
-  const selected = archive.people.find((p) => p.id === state.person);
+  // A single-person grave is that person's marker and opens as the person, whichever way it
+  // was reached; shared places (crypts, churches, city hall) open as places.
+  const selected = archive.people.find(
+    (p) => p.id === (state.person ?? soleOccupant(archive, state.place)),
+  );
   const selectedRelations = selected
     ? archive.relations
         .filter(
@@ -223,6 +228,10 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     : [];
   const hasSelection = !!selected || !!placeOnly;
   const preview = archive.people.find((p) => p.id === previewTarget?.personId);
+  const previewPlace =
+    previewTarget?.placeId && !soleOccupant(archive, previewTarget.placeId)
+      ? archive.places.find((place) => place.id === previewTarget.placeId)
+      : undefined;
   const previewPeople = previewTarget?.placeId
     ? archive.relations
         .filter((r) => r.placeId === previewTarget.placeId)
@@ -510,7 +519,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   viewport={state.viewport}
                   resetEpoch={resetEpoch}
                   focusSelection={focusSelection}
-                  onSelect={(_personId, placeId) => selectPlace(placeId)}
+                  onSelect={(_personId, placeId) => {
+                    const occupant = soleOccupant(archive, placeId);
+                    if (occupant) selectPerson(occupant, placeId);
+                    else selectPlace(placeId);
+                  }}
                   onPreview={onPreview}
                   onViewport={onViewport}
                   onFailure={() => setShowResults(true)}
@@ -528,7 +541,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                 <MapPreview
                   target={previewTarget}
                   person={preview}
-                  place={archive.places.find((place) => place.id === previewTarget.placeId)}
+                  place={previewPlace}
                   people={previewPeople}
                 />
               )}
