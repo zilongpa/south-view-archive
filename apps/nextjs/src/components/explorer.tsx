@@ -200,16 +200,19 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const selected = archive.people.find(
     (p) => p.id === (state.person ?? soleOccupant(archive, state.place)),
   );
+  // The panel lists every place in the person's life, whichever view the map is in: a grave on
+  // its own says little, so the places they lived and worked follow it. The selected place
+  // comes first, then the places in the current view, then the rest.
+  const placeScope = (placeId: string) => archive.places.find((p) => p.id === placeId)?.scope;
   const selectedRelations = selected
     ? archive.relations
-        .filter(
-          (r) =>
-            r.personId === selected.id &&
-            archive.places.some(
-              (p) => p.id === r.placeId && scopeIncludesPlace(state.scope, p.scope),
-            ),
+        .filter((r) => r.personId === selected.id && placeScope(r.placeId))
+        .sort(
+          (a, b) =>
+            Number(b.placeId === state.place) - Number(a.placeId === state.place) ||
+            Number(scopeIncludesPlace(state.scope, placeScope(b.placeId)!)) -
+              Number(scopeIncludesPlace(state.scope, placeScope(a.placeId)!)),
         )
-        .sort((a, b) => Number(b.placeId === state.place) - Number(a.placeId === state.place))
     : [];
   const selectedPlace = archive.places.find(
     (p) =>
@@ -642,7 +645,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         <section className="connected-places">
                           <h3>
                             <MapPin size={16} />
-                            {state.scope === 'cemetery' ? 'At South-View' : 'Atlanta & South-View'}
+                            Atlanta &amp; South-View
                           </h3>
                           {selectedRelations.length === 0 ? (
                             <p className="quiet-note">
@@ -671,7 +674,17 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                                     }
                                     onClick={() => {
                                       setFocusSelection(true);
-                                      update({ place: place.id, viewport: null }, true);
+                                      // A place outside the current view brings its view along.
+                                      update(
+                                        {
+                                          scope: scopeIncludesPlace(state.scope, place.scope)
+                                            ? state.scope
+                                            : place.scope,
+                                          place: place.id,
+                                          viewport: null,
+                                        },
+                                        true,
+                                      );
                                       setResetEpoch((n) => n + 1);
                                     }}
                                   >
