@@ -735,12 +735,3 @@
   color: #5a554b;
   margin: 6px 0 0;
 }
-.map-explorer .full-record-link > span {
-  display: grid;
-  gap: 2px;
-}
-.map-explorer .full-record-link small {
-  font-size: 12px;
-  font-weight: 400;
-  opacity: 0.85;
-}

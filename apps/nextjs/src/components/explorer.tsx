@@ -705,14 +705,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                       target={state.embed ? '_blank' : undefined}
                       rel={state.embed ? 'noopener noreferrer' : undefined}
                     >
-                      <span>
-                        Open the full page
-                        <small>
-                          {selected
-                            ? 'Their story, places, sources, and memories'
-                            : 'What this place is, who is connected to it, and the sources'}
-                        </small>
-                      </span>
+                      <span>Open the full page</span>
                       <ArrowRight size={17} />
                       {state.embed && <span className="sr-only"> (opens in a new tab)</span>}
                     </Link>
