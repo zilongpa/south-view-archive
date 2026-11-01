@@ -13,7 +13,7 @@ import {
   type Actor,
 } from '../packages/validators/src/community';
 import { createStore, setStoreForTests } from '../packages/db/src/connection';
-import { readLegacyStoreArchive as readStoreArchive } from '../packages/db/src/database';
+import { readStoreArchive } from '../packages/db/src/database';
 import {
   createDraft,
   updateDraft,

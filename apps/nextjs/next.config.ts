@@ -1,7 +1,5 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
-  // Separate local verification instances without interrupting the normal dev server.
-  distDir: process.env.SOUTHVIEW_NEXT_DIST_DIR || '.next',
   outputFileTracingExcludes: {
     '/*': ['../../.southview/**/*', '../../.data/**/*', '../../**/.env*', '../../**/*.log'],
   },

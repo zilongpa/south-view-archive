@@ -2344,31 +2344,3 @@ svg {
     gap: 8px;
   }
 }
-
-.archive-profile-record {
-  max-width: 1050px;
-  margin: 30px auto 80px;
-  padding: 0 28px;
-}
-.archive-profile-edit {
-  border-top: 1px solid var(--line);
-  margin-top: 48px;
-  padding-top: 28px;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
-  align-items: center;
-}
-.archive-profile-edit p {
-  color: var(--muted);
-  margin-top: 8px;
-}
-@media (max-width: 640px) {
-  .archive-profile-record {
-    padding: 0 20px;
-  }
-  .archive-profile-edit {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}

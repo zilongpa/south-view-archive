@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
-import { getPublishedProfile } from '@southview/db/profiles';
-import { profilePlainText } from '@southview/validators';
+import { createCaller } from '@southview/api';
 import { PersonArchive } from '../../../components/person-archive';
 
-const readProfile = cache(getPublishedProfile);
+const getSnapshot = cache(async () => createCaller({}).archive.snapshot());
 export const dynamic = 'force-dynamic';
 
 type Props = {
@@ -41,17 +40,17 @@ function safeReturnPath(value: string | string[] | undefined, id: string) {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const publication = await readProfile(id);
-  const person = publication?.profile;
+  const data = await getSnapshot();
+  const person = data.people.find((item) => item.id === id);
   if (!person) return { title: 'Record not found', robots: { index: false } };
-  const canonical = `${siteOrigin()}/people/${encodeURIComponent(id)}`;
+  const canonical = `${siteOrigin()}/people/${encodeURIComponent(person.id)}`;
   return {
     title: person.name,
-    description: profilePlainText(person.bodyMarkdown).slice(0, 200),
+    description: person.summary,
     alternates: { canonical },
     openGraph: {
       title: `${person.name} | South-View`,
-      description: profilePlainText(person.bodyMarkdown).slice(0, 200),
+      description: person.summary,
       url: canonical,
       type: 'article',
     },
@@ -59,14 +58,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function PersonPage({ params, searchParams }: Props) {
-  const [{ id }, query] = await Promise.all([params, searchParams]);
-  const publication = await readProfile(id);
-  if (!publication) notFound();
+  const [{ id }, query, data] = await Promise.all([params, searchParams, getSnapshot()]);
+  const person = data.people.find((item) => item.id === id);
+  if (!person) notFound();
   return (
     <PersonArchive
-      publication={publication}
-      returnTo={safeReturnPath(query.from, publication.id)}
-      canonicalUrl={`${siteOrigin()}/people/${encodeURIComponent(publication.id)}`}
+      person={person}
+      data={data}
+      returnTo={safeReturnPath(query.from, person.id)}
+      canonicalUrl={`${siteOrigin()}/people/${encodeURIComponent(person.id)}`}
     />
   );
 }

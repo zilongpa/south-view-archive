@@ -4,10 +4,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { createStore, setStoreForTests, getStore } from '../packages/db/src/connection';
-// These retained tests exercise the private legacy transition implementation.
-const getArchive = async () => readStoreArchive(await getStore());
-import { readLegacyStoreArchive as readStoreArchive } from '../packages/db/src/database';
+import { createStore, setStoreForTests } from '../packages/db/src/connection';
+import { getArchive } from '../packages/db/src/index';
+import { readStoreArchive } from '../packages/db/src/database';
 import {
   createDraft,
   updateDraft,
@@ -92,9 +91,7 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         assert.equal(snapshot.credits[0]?.id, 'initial-compilation');
         assert.equal(snapshot.contributions.length, 0);
         const versions = await store.query('SELECT version FROM archive.schema_migrations');
-        assert.ok(
-          versions.rows.some((row) => (row as { version: string }).version === '0006_profiles.sql'),
-        );
+        assert.equal(versions.rows.length, 5);
       },
     );
     await t.test(
@@ -487,10 +484,7 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
       'fixture mode is read-only even when a writable test connection exists',
       async () => {
         process.env.ARCHIVE_DATA_MODE = 'fixture';
-        assert.equal(
-          (await (await import('../packages/db/src/index')).getArchive()).contributions.length,
-          0,
-        );
+        assert.equal((await getArchive()).contributions.length, 0);
         await assert.rejects(createDraft(original(), guest, token()), { code: 'READ_ONLY' });
         delete process.env.ARCHIVE_DATA_MODE;
       },

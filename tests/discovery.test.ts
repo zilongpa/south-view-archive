@@ -369,18 +369,11 @@ test('tRPC discovery uses the public projection and person API includes secondar
     );
   });
   const caller = createCaller({});
-  const results = await caller.archive.discover({ q: 'lantern procession' });
-  assert.equal(results.total, 2);
-  assert.ok(results.items.every((item) => 'profile' in item));
+  const results = await caller.archive.discover({ q: 'lantern procession', type: 'story' });
+  assert.equal(results.total, 1);
   const secondary = await caller.archive.person({ id: 'alonzo-herndon' });
-  assert.equal(secondary.contributions.length, 0);
-  assert.match(secondary.person.summary, /lantern procession/);
-  assert.equal(secondary.materials.length, 0);
-  assert.match(secondary.person.summary, /lithography/);
-  assert.ok(
-    secondary.sources.some(
-      (source) => source.id === `alonzo-herndon:${data.materials[0]!.sourceId}`,
-    ),
-  );
+  assert.ok(secondary.contributions.some((entry) => entry.id === 'lantern-evening'));
+  assert.ok(secondary.materials.some((material) => material.id === data.materials[0]!.id));
+  assert.ok(secondary.sources.some((source) => source.id === data.materials[0]!.sourceId));
   assert.equal((await caller.archive.discover({ q: 'private-sentinel' })).total, 0);
 });

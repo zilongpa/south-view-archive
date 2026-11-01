@@ -1,12 +1,11 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { getArchive } from '@southview/db';
-import { readPublishedProfiles } from '@southview/db/profiles';
 import {
   searchArchive,
   searchSchema,
-  searchProfiles,
-  profileSearchInputSchema,
+  discoverArchive,
+  discoveryInputSchema,
   publicRelatedPersonIds,
   type ArchiveData,
   type Scope,
@@ -83,8 +82,8 @@ const t = initTRPC.context<Record<string, never>>().create();
 const archiveRouter = t.router({
   snapshot: t.procedure.query(() => getArchive()),
   discover: t.procedure
-    .input(profileSearchInputSchema)
-    .query(async ({ input }) => searchProfiles(await readPublishedProfiles(), input)),
+    .input(discoveryInputSchema)
+    .query(async ({ input }) => discoverArchive(await getArchive(), input)),
   search: t.procedure
     .input(searchSchema)
     .query(async ({ input }) => archiveSearch(await getArchive(), input)),

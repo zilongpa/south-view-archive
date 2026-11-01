@@ -1,18 +1,17 @@
 import type { Metadata } from 'next';
 import { CommunityShell } from '@/components/community-shell';
-import { ProfileReceipt } from '@/components/profile-receipt';
+import { SubmissionManager } from '@/components/submission-manager';
 export const metadata: Metadata = {
-  title: 'My profile submissions',
+  title: 'My contributions',
   robots: { index: false, follow: false },
-  referrer: 'no-referrer',
 };
 export default function MyContributionsPage() {
   return (
     <CommunityShell
-      title="Your profile submissions."
-      description="Follow complete profiles you have proposed to the archive."
+      title="The stories you have shared."
+      description="A place to follow your contributions and the conversations that help them grow."
     >
-      <ProfileReceipt />
+      <SubmissionManager />
     </CommunityShell>
   );
 }

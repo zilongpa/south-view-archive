@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'About the archive',
   description:
-    'How sourced person profiles, community memories, and map locations fit together in the South-View archive.',
+    'How to read the records, sources, oral histories, and map positions in the South-View public archive demo.',
 };
 
 export default function AboutPage() {
@@ -28,10 +28,10 @@ export default function AboutPage() {
         <section className="archive-section">
           <h2>Read the story. Follow its sources.</h2>
           <p>
-            Numbered citations connect profile text, portraits, and place relationships to their
-            evidence. They link to a source list with the original collection, publication details,
-            and access date. A source that documents a person’s burial does not, by itself,
-            establish an exact grave position.
+            Numbered citations appear beside factual summaries and place relationships. They link to
+            a source list with the original collection, publication details, and access date. A
+            source that documents a person’s burial does not, by itself, establish an exact grave
+            position.
           </p>
           <p>
             Oral histories are identified as spoken accounts, with narrator, interviewer, and
@@ -75,16 +75,16 @@ export default function AboutPage() {
             records.
           </p>
           <p>
-            You can edit an existing person’s complete profile or propose a new person without an
-            account. Biographies, memories, sources and connected places belong in that profile.
-            Nothing is saved until you submit, and every proposal is reviewed before replacing the
-            public page. Your contact name and email stay private; choose a public credit or
-            contribute anonymously.
+            You can share a memory, photograph, source, correction, or a proposed person record
+            without an account. Every submission is reviewed before publication. Your contact name
+            and email stay private; choose a public name or an anonymous credit. Optional email
+            sign-in lets you manage your contributions.
           </p>
           <p>
-            Sources preserve the original author, narrator, institution and image rights when known.
-            Memories remain attributed recollections within the editable person body. Follow a
-            profile’s sources to understand the evidence behind its text and locations.
+            Each entry names its provider separately from the original author, narrator, and holding
+            institution. Initial records are credited to “Initial archive compilation.” Community
+            memories remain personal accounts even after review, and can be cited through their
+            permanent links.
           </p>
           <Link className="archive-text-link" href="/contribute">
             Contribute to the archive <ArrowUpRight size={17} />

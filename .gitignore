@@ -1,6 +1,5 @@
 node_modules/
 .next/
-.next-*/
 .turbo/
 .env
 .env.local
@@ -24,6 +23,3 @@ docs/screenshots/
 *.key
 *.p12
 *.pfx
-
-# Local deployment configuration.
-south-view-production.env

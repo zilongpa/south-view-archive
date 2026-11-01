@@ -10,15 +10,12 @@
     "./photos": "./src/photos.ts",
     "./upload-ticket": "./src/upload-ticket.ts",
     "./config": "./src/config.ts",
-    "./vet": "./src/vet.ts",
-    "./profile-service": "./src/profile-service.ts",
-    "./profile-vet": "./src/profile-vet.ts"
+    "./vet": "./src/vet.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "grant-reviewer": "tsx script/grant-reviewer.ts",
-    "check-storage": "tsx script/check-storage.ts",
-    "cleanup-profiles": "tsx script/cleanup-profiles.ts"
+    "check-storage": "tsx script/check-storage.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",

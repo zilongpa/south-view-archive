@@ -9,9 +9,7 @@
     "./seed": "./src/seed.ts",
     "./connection": "./src/connection.ts",
     "./community": "./src/community.ts",
-    "./vet": "./src/vet.ts",
-    "./profiles": "./src/profiles.ts",
-    "./profile-conversion": "./src/profile-conversion.ts"
+    "./vet": "./src/vet.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

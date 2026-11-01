@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { CommunityShell } from '@/components/community-shell';
-import { ProfileReceipt } from '@/components/profile-receipt';
+import { SubmissionManager } from '@/components/submission-manager';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
-  title: 'Your profile submission',
+  title: 'Your contribution',
   robots: { index: false, follow: false },
   referrer: 'no-referrer',
 };
@@ -11,10 +11,10 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   return (
     <CommunityShell
-      title="Your profile submission."
-      description="Follow your complete profile proposal from submission to publication."
+      title="Your contribution, in good hands."
+      description="Follow the review, add a detail, and stay connected to the story you shared."
     >
-      <ProfileReceipt id={id} />
+      <SubmissionManager id={id} />
     </CommunityShell>
   );
 }

@@ -3,43 +3,16 @@ import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from '
 import test, { type TestContext } from 'node:test';
 import { getArchive } from '@southview/db';
 import { createStore, setStoreForTests } from '@southview/db/connection';
-import { createProfileRepository } from '@southview/db/profiles';
+import {
+  createDraft,
+  finalizeSubmission,
+  getPublicContribution,
+  reviewSubmission,
+} from '@southview/db/community';
 import { createAuth, getSignInMethods } from '@southview/services/auth';
 import { authAvailable } from '@southview/services/mail';
-import { safeCommunityNext, profileSubmissionSchema } from '@southview/validators';
+import { safeCommunityNext, submissionInputSchema } from '@southview/validators';
 import { GET, POST } from '../apps/nextjs/src/app/api/community/[...path]/route';
-import { GET as profileGET } from '../apps/nextjs/src/app/api/profiles/[...path]/route';
-
-function completeProposal(email: string) {
-  return profileSubmissionSchema.parse({
-    requestId: randomUUID(),
-    receiptToken: randomBytes(48).toString('base64url'),
-    personId: null,
-    baseVersion: null,
-    profile: {
-      name: 'Community Person',
-      tags: [],
-      bodyMarkdown: 'An attributed family recollection.',
-      bodySourceIds: ['memory'],
-      sources: [
-        { id: 'memory', title: 'Family account', kind: 'memory', creator: 'Anonymous contributor' },
-      ],
-      locations: [],
-    },
-    privateName: 'Private Family Contact',
-    email,
-    publicCredit: 'Anonymous contributor',
-    permission: true,
-  });
-}
-function profileCall(path: string, cookie?: string, receipt?: string) {
-  const headers = new Headers();
-  if (cookie) headers.set('Cookie', cookie);
-  if (receipt) headers.set('X-Receipt-Token', receipt);
-  return profileGET(new Request(`${origin}/api/profiles/${path}`, { headers }), {
-    params: Promise.resolve({ path: path.split('/') }),
-  });
-}
 
 const origin = 'http://127.0.0.1:3000';
 const environment = {
@@ -365,12 +338,23 @@ test('same verified email links to the existing account without replacing name, 
     user.id,
     'test-operator',
   ]);
-  const input = completeProposal(user.email);
-  await createProfileRepository(store).submit(input, {
-    userId: user.id,
+  const input = submissionInputSchema.parse({
+    clientRequestId: randomUUID(),
+    kind: 'memory',
+    personId: null,
+    proposedPersonName: 'Test Person',
+    title: 'Existing account memory',
+    body: 'A private memory written before using Google to sign in.',
+    privateName: 'Private Submission Contact',
     email: user.email,
-    reviewer: false,
+    anonymous: true,
+    permission: true,
   });
+  await createDraft(
+    input,
+    { userId: user.id, email: user.email, reviewer: false },
+    randomBytes(48).toString('base64url'),
+  );
   const linked = await google({
     sub: 'linked-google-user',
     email: user.email,
@@ -381,10 +365,10 @@ test('same verified email links to the existing account without replacing name, 
   assert.equal(linked.session.user.name, user.name);
   assert.equal((await store.query('SELECT id FROM community.auth_user')).rows.length, 1);
   assert.equal((await (await community('session', linked.cookie)).json()).reviewer, true);
-  const mine = await (await profileCall('mine', linked.cookie)).json();
-  assert.equal(mine.proposals.length, 1);
-  assert.equal(mine.proposals[0].publicCredit, 'Anonymous contributor');
-  assert.equal(mine.proposals[0].profile.name, 'Community Person');
+  const mine = await (await community('mine', linked.cookie)).json();
+  assert.equal(mine.submissions.length, 1);
+  assert.equal(mine.submissions[0].input.anonymous, true);
+  assert.equal(mine.submissions[0].input.displayName, '');
 });
 
 test('automatic linking refuses either an unverified Google email or an unverified local account', async (t) => {
@@ -456,39 +440,57 @@ test('cancelled, missing, mismatched and replayed OAuth state cannot create anot
   assert.equal((await store.query('SELECT id FROM community.auth_session')).rows.length, 1);
 });
 
-test('Google sign-in does not auto-claim a guest proposal, and publication preserves public credit and privacy', async (t) => {
+test('Google guest-claim still requires the receipt plus matching email and publication retains anonymity', async (t) => {
   const { store, google } = await setup(t);
-  const input = completeProposal('owner@example.org');
-  const repo = createProfileRepository(store);
-  const pending = await repo.submit(input, { userId: null, email: null, reviewer: false });
+  const receipt = randomBytes(48).toString('base64url');
+  const input = submissionInputSchema.parse({
+    clientRequestId: randomUUID(),
+    kind: 'memory',
+    personId: null,
+    proposedPersonName: 'Community Test Person',
+    title: 'An anonymous community memory',
+    body: 'A privately provided family memory with no outside source.',
+    privateName: 'Private Family Contact',
+    email: 'owner@example.org',
+    anonymous: true,
+    permission: true,
+  });
+  const draft = await createDraft(input, { userId: null, email: null, reviewer: false }, receipt);
   const owner = await google({ sub: 'owner-google', email: input.email, email_verified: true });
   const other = await google({
     sub: 'other-google',
     email: 'other@example.org',
     email_verified: true,
   });
-  assert.equal((await profileCall(`submissions/${pending.id}`, owner.cookie)).status, 404);
-  assert.equal((await profileCall(`submissions/${pending.id}`, other.cookie)).status, 404);
-  assert.equal(
-    (await profileCall(`submissions/${pending.id}`, owner.cookie, input.receiptToken)).status,
-    200,
-  );
+  const claimPath = `submissions/${draft.submission.id}/claim`;
+  assert.equal((await community(claimPath, undefined, receipt, 'POST')).status, 403);
+  assert.equal((await community(claimPath, owner.cookie, undefined, 'POST')).status, 403);
+  assert.equal((await community(claimPath, other.cookie, receipt, 'POST')).status, 403);
+  assert.equal((await community(claimPath, owner.cookie, receipt, 'POST')).status, 200);
   assert.equal((await community('review', owner.cookie)).status, 403);
+  const ownerActor = { userId: owner.session.user.id, email: input.email, reviewer: false };
+  await finalizeSubmission(draft.submission.id, ownerActor);
   await store.query('INSERT INTO community.reviewers (user_id, granted_by) VALUES ($1, $2)', [
     other.session.user.id,
     'test-operator',
   ]);
-  await repo.approve(pending.id, 1, {
-    userId: other.session.user.id,
-    email: other.session.user.email,
-    reviewer: true,
-  });
+  const published = await reviewSubmission(
+    draft.submission.id,
+    {
+      action: 'publish',
+      applyTo: 'entry',
+      newPersonName: 'Community Test Person',
+    },
+    { userId: other.session.user.id, email: other.session.user.email, reviewer: true },
+  );
+  const publicEntry = await getPublicContribution(published.entryId!);
+  assert.ok(publicEntry);
   const publicJSON = JSON.stringify(await getArchive());
   assert.match(publicJSON, /Anonymous contributor/);
   for (const secret of [
     input.privateName,
     input.email,
-    input.receiptToken,
+    receipt,
     owner.session.user.name,
     'private-account-photo',
     'private-access-token',

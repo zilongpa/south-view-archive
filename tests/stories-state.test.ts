@@ -14,107 +14,109 @@ function parseHref(href: string) {
   return parseStoriesState(Object.fromEntries(new URL(href, origin).searchParams));
 }
 
-test('stories URL parsing bounds profile filters and ignores obsolete content-type filters', () => {
+test('stories URL parsing bounds untrusted input and defaults ambiguous or invalid parameters', () => {
   assert.deepEqual(parseStoriesState({}), {
     q: '',
-    name: '',
-    tag: 'all',
-    place: '',
+    type: 'all',
+    theme: 'all',
     personId: undefined,
     placeId: undefined,
     sort: 'relevance',
+    featured: false,
     page: 1,
   });
   const bounded = parseStoriesState({
     q: 'x'.repeat(1000),
-    name: 'n'.repeat(500),
-    tag: 'y'.repeat(500),
+    theme: 'y'.repeat(500),
     personId: 'p'.repeat(500),
     placeId: 'l'.repeat(500),
-    place: 'a'.repeat(500),
     page: '999999999',
-    type: 'photo',
-    featured: '1',
-    sort: 'invalid',
+    type: 'external',
+    sort: 'malicious',
   });
   assert.equal(bounded.q.length, 200);
-  assert.equal(bounded.name.length, 160);
-  assert.equal(bounded.tag.length, 80);
-  assert.equal(bounded.place.length, 200);
+  assert.equal(bounded.theme.length, 80);
   assert.equal(bounded.personId?.length, 120);
-  assert.equal(bounded.placeId?.length, 250);
+  assert.equal(bounded.placeId?.length, 120);
   assert.equal(bounded.page, 10000);
+  assert.equal(bounded.type, 'all');
   assert.equal(bounded.sort, 'relevance');
-  assert.equal('type' in bounded, false);
-  assert.equal('featured' in bounded, false);
   for (const page of ['0', '-1', 'NaN', 'Infinity', '1.5', ''])
     assert.equal(parseStoriesState({ page }).page, 1);
   assert.deepEqual(
-    parseStoriesState({ q: ['one', 'two'], name: ['a', 'b'], page: ['2', '3'] }),
+    parseStoriesState({
+      q: ['private', 'public'],
+      type: ['story', 'photo'],
+      personId: ['one', 'two'],
+      page: ['2', '3'],
+    }),
     parseStoriesState({}),
   );
 });
 
-test('profile search filters and pagination survive refresh, sharing and clearing', () => {
+test('all public discovery filters and pagination survive refresh and sharing', () => {
   const state = parseStoriesState({
     q: 'family & church',
-    name: 'John',
-    tag: 'Civil Rights',
+    type: 'story',
+    theme: 'Civil Rights',
     personId: 'john-lewis',
-    placeId: 'john-lewis:city-hall',
-    place: 'Atlanta',
+    placeId: 'atlanta-city-hall',
     sort: 'recent',
+    featured: '1',
     page: '4',
   });
   const href = storiesHref(state);
+  assert.equal(new URL(href, origin).pathname, '/stories');
   assert.deepEqual(parseHref(href), state);
   assert.equal(storiesHref(parseHref(href)), href);
-  assert.deepEqual(parseHref(storiesHref(state, { page: 2 })), { ...state, page: 2 });
-  const original = structuredClone(state);
+});
+
+test('editorial selection is an explicit URL filter that can be cleared without losing the query', () => {
+  const state = parseStoriesState({ q: 'family', type: 'story', featured: '1', page: '2' });
+  assert.equal(state.featured, true);
+  assert.equal(new URL(storiesHref(state), origin).searchParams.get('featured'), '1');
+  const cleared = storiesHref(state, { featured: false, page: 1 });
+  assert.equal(new URL(cleared, origin).searchParams.has('featured'), false);
+  assert.deepEqual(parseHref(cleared), { ...state, featured: false, page: 1 });
+  for (const featured of ['true', 'yes', '0', '', '1&personId=private'])
+    assert.equal(parseStoriesState({ featured }).featured, false);
+  assert.equal(parseStoriesState({ featured: ['1', '0'] }).featured, false);
+});
+
+test('tab changes and page navigation retain other filters without mutating the active state', () => {
+  const state = parseStoriesState({
+    q: 'family photograph',
+    type: 'story',
+    theme: 'Community',
+    personId: 'john-lewis',
+    placeId: 'city-hall',
+    sort: 'recent',
+    page: '3',
+  });
+  const copy = structuredClone(state);
+  assert.deepEqual(parseHref(storiesHref(state, { type: 'photo', page: 1 })), {
+    ...state,
+    type: 'photo',
+    page: 1,
+  });
+  assert.deepEqual(parseHref(storiesHref(state, { page: 4 })), { ...state, page: 4 });
   assert.deepEqual(
     parseHref(
-      storiesHref(state, {
-        q: '',
-        name: '',
-        tag: 'all',
-        personId: undefined,
-        placeId: undefined,
-        place: '',
-        page: 1,
-      }),
+      storiesHref(state, { q: '', theme: 'all', personId: undefined, placeId: undefined, page: 1 }),
     ),
-    {
-      ...state,
-      q: '',
-      name: '',
-      tag: 'all',
-      personId: undefined,
-      placeId: undefined,
-      place: '',
-      page: 1,
-    },
+    { ...state, q: '', theme: 'all', personId: undefined, placeId: undefined, page: 1 },
   );
-  assert.deepEqual(state, original);
+  assert.deepEqual(state, copy);
 });
 
-test('old theme URLs select tags and old record-type filters cannot hide people', () => {
-  assert.equal(
-    parseStoriesState({ theme: 'Community', type: 'story', featured: '1' }).tag,
-    'Community',
-  );
-  assert.equal(
-    new URL(storiesHref(parseStoriesState({ type: 'photo', featured: '1' })), origin).search,
-    '',
-  );
-});
-
-test('query punctuation and markup remain text instead of injecting filters', () => {
-  const q = 'John &type=photo&personId=someone#<script>alert(1)</script>';
-  const state = parseStoriesState({ q, tag: 'Arts + Music' });
+test('query punctuation and markup remain query text instead of injecting filters or fragments', () => {
+  const q = 'John &type=photo&personId=someone#<script>alert("x")</script>';
+  const state = parseStoriesState({ q, type: 'story', theme: 'Arts + Music' });
   const url = new URL(storiesHref(state), origin);
   assert.equal(url.origin, origin);
   assert.equal(url.hash, '');
   assert.equal(url.searchParams.get('q'), q);
+  assert.deepEqual(url.searchParams.getAll('type'), ['story']);
   assert.equal(url.searchParams.has('personId'), false);
   assert.deepEqual(parseHref(url.href), state);
 });

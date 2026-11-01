@@ -1,23 +1,38 @@
 import type { Metadata } from 'next';
+import { getArchive } from '@southview/db';
 import { CommunityShell } from '@/components/community-shell';
-import { ProfileEditor } from '@/components/profile-editor';
+import { ContributionForm } from '@/components/contribution-form';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
-  title: 'Propose a person profile',
-  description: 'Propose a complete, sourced person profile for the South-View community archive.',
+  title: 'Share a story',
+  description:
+    'Contribute a memory, photograph, correction, or a new person to the South-View community archive.',
 };
 export default async function ContributePage({
   searchParams,
 }: {
   searchParams: Promise<{ person?: string }>;
 }) {
-  const query = await searchParams;
+  const [data, query] = await Promise.all([getArchive(), searchParams]);
+  const initialPersonId = data.people.some((person) => person.id === query.person)
+    ? query.person
+    : undefined;
   return (
     <CommunityShell
-      title="Help preserve a person’s story."
-      description="Edit a complete person profile, with sources and connected places. Archive reviewers check every proposal before publication."
+      title="What will you help us remember?"
+      description="Share a memory, a photograph, or a piece of history. Every contribution is reviewed by archive reviewers before it joins the public archive."
     >
-      <ProfileEditor initialPersonId={query.person} />
+      <ContributionForm
+        people={data.people.map(({ id, name, aliases, birthYear, deathYear }) => ({
+          id,
+          name,
+          aliases,
+          birthYear,
+          deathYear,
+        }))}
+        places={data.places.map(({ id, name, scope }) => ({ id, name, scope }))}
+        initialPersonId={initialPersonId}
+      />
     </CommunityShell>
   );
 }
