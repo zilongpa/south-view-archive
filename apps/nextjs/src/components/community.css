@@ -335,7 +335,7 @@
 .community-control {
   font: inherit;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-border);
   border-radius: 3px;
   padding: 12px 14px;
   width: 100%;
@@ -877,6 +877,56 @@
 .community-required {
   color: var(--wine);
 }
+.community-also-list {
+  margin: 8px 0 0 18px;
+  display: grid;
+  gap: 4px;
+}
+.community-also-list a {
+  color: var(--wine);
+  text-decoration: underline;
+}
+.person-jump {
+  margin-bottom: 8px;
+}
+.community-legend {
+  margin: 0 0 22px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--wine);
+  background: var(--wine-light);
+  font-size: 15px;
+}
+.community-legend::before {
+  content: '* ';
+  color: var(--wine);
+  font-weight: 700;
+}
+.community-field-error {
+  color: #8a2f3f;
+  font-weight: 600;
+}
+.community-field.has-error input,
+.community-field.has-error textarea {
+  border-color: #8a2f3f;
+  box-shadow: inset 0 0 0 1px #8a2f3f;
+}
+.community-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.community-link-row input {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .community-link-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .community-link-row input:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+}
 @keyframes community-spin {
   to {
     transform: rotate(360deg);
@@ -976,4 +1026,95 @@
   .community-spinner {
     animation: none;
   }
+}
+
+/* "How do you know this?" on the new-person form. */
+.community-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 4px 0 0;
+  min-width: 0;
+}
+.community-fieldset > legend {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 10px;
+}
+.source-kind-options {
+  display: grid;
+  gap: 8px;
+}
+.source-kind-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  border: 1px solid var(--control-border, #8c806d);
+  background: #fffdf6;
+  cursor: pointer;
+}
+.source-kind-option:has(input:checked) {
+  border-color: var(--wine);
+  box-shadow: inset 0 0 0 1px var(--wine);
+  background: #faf3ec;
+}
+.source-kind-option input {
+  margin-top: 3px;
+  accent-color: var(--wine);
+}
+.source-kind-option span {
+  display: grid;
+  gap: 2px;
+}
+.source-kind-option strong {
+  font-size: 15px;
+}
+.source-kind-option small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+@media (min-width: 700px) {
+  .source-kind-options {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Short form: the chosen person's known places, and the folded "Add more" drawer. */
+.community-place-choices {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.community-place-choices .community-check small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+/* The closing "A place not listed here" row has a single line: centre its box on that line. */
+.community-place-choices .community-check:last-child {
+  align-items: center;
+}
+.community-place-choices .community-check:last-child input {
+  margin-top: 0;
+}
+.community-person-hint {
+  margin: -4px 0 4px;
+  line-height: 1.5;
+}
+.community-person-hint a {
+  color: var(--wine);
+}
+.community-more {
+  margin-top: 18px;
+}
+.community-more > summary {
+  font-size: 16px;
+  font-weight: 600;
+}
+.community-more .community-section {
+  margin-top: 14px;
+  padding-top: 0;
+  border-top: 0;
 }

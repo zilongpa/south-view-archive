@@ -3,16 +3,20 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { Person, Place } from '@southview/validators';
 import { previewPosition, type PreviewTarget } from '@/lib/explore-preview';
+import { peopleLine } from '@/lib/people-line';
 import { displayPersonName } from '@/lib/person-name';
 
 export function MapPreview({
   target,
   person,
   place,
+  people = [],
 }: {
   target: PreviewTarget;
   person: Person;
   place?: Place;
+  /** Everyone connected to the hovered place, when the preview is for a marker. */
+  people?: string[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -55,9 +59,21 @@ export function MapPreview({
         visibility: position ? 'visible' : 'hidden',
       }}
     >
-      <h3>{displayPersonName(person.name)}</h3>
-      {place && <span className="preview-place">{place.name}</span>}
-      <p>{person.summary}</p>
+      {place ? (
+        <>
+          <h3>{place.name}</h3>
+          <span className="preview-place">
+            {place.scope === 'cemetery' ? 'Grave marker' : 'Place'}
+            {people.length ? ` · ${peopleLine(people)}` : ''}
+          </span>
+          <p>{place.summary || person.summary}</p>
+        </>
+      ) : (
+        <>
+          <h3>{displayPersonName(person.name)}</h3>
+          <p>{person.summary}</p>
+        </>
+      )}
     </div>
   );
 }

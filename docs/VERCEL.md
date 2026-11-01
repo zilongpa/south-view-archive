@@ -8,7 +8,7 @@ The completed review desk and Luna/web-search integration were deployed from sou
 
 Versioned migration `0005_vet.sql` was applied to the existing Supabase database using the existing local migration connection. The private Vet table has RLS enabled and contained zero runs at verification. No local test submissions, accounts, photos, or mail were imported. The source and release record are tracked in the existing private GitHub repository. GitHub publishing does not itself configure automatic Vercel deployments.
 
-After publication, `/explore`, `/stories`, `/people/john-lewis`, `/contribute`, and `/admin/contributions` returned HTTP 200. The session endpoint confirmed database mode. Unauthenticated `/api/community/review` and `/api/community/review/vet` returned private/no-store HTTP 403 responses without report data. The pages contained no isolated QA submissions or simulated reports.
+After publication, `/explore`, `/stories` (since removed), `/people/john-lewis`, `/contribute`, and `/admin/contributions` returned HTTP 200. The session endpoint confirmed database mode. Unauthenticated `/api/community/review` and `/api/community/review/vet` returned private/no-store HTTP 403 responses without report data. The pages contained no isolated QA submissions or simulated reports.
 
 Production still has no Google OAuth or SMTP configuration, so account sign-in and staff web review require a real sign-in method and a reviewer grant. `OPENAI_API_KEY` is also intentionally not configured yet: real Vet calls remain disabled, and live Luna quality/latency have not been verified. See [AI vetting setup](AI-VETTING.md). Guest submissions remain available. No production test contribution was created during this release verification.
 

@@ -1,6 +1,6 @@
 # Google sign-in configuration
 
-The application supports Google sign-in alongside email verification codes and guest submissions. Google uses only `openid email profile` with `online` access to establish a local account and session; SMTP is not required. Email codes, receipts, and review notifications remain the responsibility of the separate mail service.
+Google sign-in is the only account sign-in, alongside guest submissions with private receipts. Google uses only `openid email profile` with `online` access to establish a local account and session. The application sends no email.
 
 The button uses [Google's officially pre-approved assets](https://developers.google.com/identity/branding-guidelines): a light rectangular button with the current gradient G and official lettering. The unmodified 4× PNG is hosted with the application and displayed at its original aspect ratio, 216×48 pixels. Keyboard focus, disabled state, and a separate loading indicator are provided. It still calls the Better Auth redirect flow; Google One Tap and the Google Identity Services SDK have not been added. No external font or script is needed to display it. The button remains hidden when OAuth configuration is incomplete.
 
@@ -13,10 +13,10 @@ The button uses [Google's officially pre-approved assets](https://developers.goo
 3. In **Data Access**, retain only the basic sign-in scopes used here: `openid`, `email`, and `profile`. The console may display the latter two as full `userinfo.email` and `userinfo.profile` URIs. The application does not need offline access or additional Google data scopes. See [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect#sendauthrequest).
 4. Under **Clients → Create client**, choose **Web application**, create a dedicated OAuth client, and register the full addresses below under **Authorized redirect URIs**. Store the client ID and secret in private configuration. Do not share them in chat or screenshots or commit them to Git. See [Google's client setup instructions](https://support.google.com/cloud/answer/15549257).
 
-| Environment | Authorized redirect URI |
-| --- | --- |
-| Current local development | `http://127.0.0.1:3000/api/auth/callback/google` |
-| Production | The actual HTTPS `BETTER_AUTH_URL` followed by `/api/auth/callback/google` |
+| Environment               | Authorized redirect URI                                                    |
+| ------------------------- | -------------------------------------------------------------------------- |
+| Current local development | `http://127.0.0.1:3000/api/auth/callback/google`                           |
+| Production                | The actual HTTPS `BETTER_AUTH_URL` followed by `/api/auth/callback/google` |
 
 `BETTER_AUTH_URL` is the site origin without a path. The callback must exactly match the registered address, including protocol, host, port, path, and trailing slash; otherwise Google returns `redirect_uri_mismatch`. Local loopback addresses can use HTTP; production uses HTTPS. Open the website at the same origin in the browser, without mixing `localhost` and `127.0.0.1`. See [Google's redirect matching rules](https://developers.google.com/identity/protocols/oauth2/web-server#creatingcred).
 
@@ -31,12 +31,11 @@ BETTER_AUTH_URL=http://127.0.0.1:3000
 NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000
 GOOGLE_CLIENT_ID=YOUR_WEB_APPLICATION_CLIENT_ID
 GOOGLE_CLIENT_SECRET=YOUR_CLIENT_SECRET
-MAIL_MODE=local
 ```
 
-Replace the placeholders with valid credentials. Both variables are read on the server and must not use the `NEXT_PUBLIC_` prefix. The client ID is sent to Google as part of the OAuth request; the secret is used only for the server-side exchange. If either value is missing, Google sign-in is unavailable, while configured email-code sign-in and guest submissions can continue. In development/test only, `MAIL_MODE=local` saves codes and notifications in the private `.southview/outbox/` without sending email.
+Replace the placeholders with valid credentials. Both variables are read on the server and must not use the `NEXT_PUBLIC_` prefix. The client ID is sent to Google as part of the OAuth request; the secret is used only for the server-side exchange. If either value is missing, Google sign-in is unavailable while guest submissions continue.
 
-For production, put these settings in the deployment platform and configure the actual HTTPS `BETTER_AUTH_URL`, matching `NEXT_PUBLIC_SITE_URL`, and a random `BETTER_AUTH_SECRET` of at least 32 bytes. Database and private-photo settings follow the [README](../README.md). The development outbox is never enabled in production: Google can work without SMTP, but real email codes and notifications need working SMTP. Enable `TRUST_PROXY=1` only when a trusted reverse proxy overwrites externally supplied forwarding headers.
+For production, put these settings in the deployment platform and configure the actual HTTPS `BETTER_AUTH_URL`, matching `NEXT_PUBLIC_SITE_URL`, and a random `BETTER_AUTH_SECRET` of at least 32 bytes. Database and private-photo settings follow the [README](../README.md). No email is sent in any environment. Enable `TRUST_PROXY=1` only when a trusted reverse proxy overwrites externally supplied forwarding headers.
 
 Open sign-in on the standalone site. From an iframe, use the contribution/sign-in links that open a new tab. Do not register the parent website or iframe page as the Google callback.
 
@@ -59,9 +58,9 @@ The reviewer first signs in with a verified email. An operator then runs `pnpm r
 The following live checks remain outstanding in the recorded setup; mocked tests must not be reported as substitutes:
 
 - Start Google sign-in from the exact local origin, verify that only basic identity scopes are requested, and confirm a local session on return.
-- Cancel authorization and test a callback configuration error; errors should be recoverable, with email codes and guest submissions still independently usable.
+- Cancel authorization and test a callback configuration error; errors should be recoverable, with guest submissions still independently usable.
 - Matching, mutually verified emails link to one account. Mismatched or unverified emails cannot merge accounts this way.
 - Ordinary users lack reviewer access, and Google users still need the original receipt to claim guest submissions.
-- Repeat callback, session, sign-out, and allowed in-site return checks at the production HTTPS origin. Verify Google Console publication/branding state and actual mail delivery separately.
+- Repeat callback, session, sign-out, and allowed in-site return checks at the production HTTPS origin. Verify Google Console publication/branding state separately.
 
 Actual automated and browser results are recorded in [VALIDATION.md](./VALIDATION.md). The official references above were checked on 2026-10-03; translating this document does not constitute a new provider-policy review.

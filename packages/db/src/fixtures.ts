@@ -112,7 +112,15 @@ export const fixtureArchive: ArchiveData = validateArchive({
   places: [
     {
       id: 'lewis-south-view',
-      name: 'John Lewis · South-View',
+      name: 'John Lewis',
+      summary:
+        'The grave of John Lewis at South-View Cemetery. The official congressional biography records his interment here; the marker is a reference position without a section or plot number.',
+      summaryCitations: [
+        {
+          sourceId: 'house-lewis-biography',
+          locator: 'Biography: interment at South-View Cemetery',
+        },
+      ],
       scope: 'cemetery',
       coordinates: [-84.3751025, 33.7027115],
       precision: 'reference',
@@ -124,7 +132,10 @@ export const fixtureArchive: ArchiveData = validateArchive({
     },
     {
       id: 'king-sr-south-view',
-      name: 'King family crypt · South-View',
+      name: 'King family crypt',
+      summary:
+        'The shared marble crypt of Martin Luther King Sr. and Alberta Williams King at South-View Cemetery, as recorded by Georgia’s official tourism guide.',
+      summaryCitations: [{ sourceId: 'explore-georgia-south-view' }],
       scope: 'cemetery',
       coordinates: [-84.37371497174524, 33.70147934849705],
       precision: 'reference',
@@ -136,7 +147,12 @@ export const fixtureArchive: ArchiveData = validateArchive({
     },
     {
       id: 'herndon-south-view',
-      name: 'Alonzo Herndon · South-View',
+      name: 'Alonzo Herndon',
+      summary:
+        'The grave of Alonzo Herndon at South-View Cemetery. The Herndon Home National Historic Landmark nomination records his burial here; the marker is a reference position.',
+      summaryCitations: [
+        { sourceId: 'nps-herndon-nomination', locator: 'Printed page 18 / PDF page 18' },
+      ],
       scope: 'cemetery',
       coordinates: [-84.371068, 33.70024],
       precision: 'reference',
@@ -149,6 +165,9 @@ export const fixtureArchive: ArchiveData = validateArchive({
     {
       id: 'atlanta-city-hall',
       name: 'Atlanta City Hall',
+      summary:
+        'The seat of Atlanta’s city government at 55 Trinity Avenue SW. The archive marks the building as an institution; it does not identify any individual’s office or a visitor entrance.',
+      summaryCitations: [{ sourceId: 'atlanta-government' }],
       scope: 'atlanta',
       coordinates: [-84.39058505, 33.7486207],
       precision: 'address',
@@ -166,6 +185,9 @@ export const fixtureArchive: ArchiveData = validateArchive({
     {
       id: 'ebenezer-heritage',
       name: 'Ebenezer Baptist Church',
+      summary:
+        'The historic Heritage Sanctuary of Ebenezer Baptist Church on Auburn Avenue, preserved within the Martin Luther King, Jr. National Historical Park. Martin Luther King Sr. and Martin Luther King Jr. served the congregation as co-pastors.',
+      summaryCitations: [{ sourceId: 'nps-ebenezer-place' }],
       scope: 'atlanta',
       coordinates: [-84.374046, 33.755268],
       precision: 'reference',
@@ -183,6 +205,9 @@ export const fixtureArchive: ArchiveData = validateArchive({
     {
       id: 'herndon-home',
       name: 'Herndon Home Museum',
+      summary:
+        'The Herndon family home on University Place, now a museum kept by The Herndon Foundation. It preserves the family’s history and the enterprises Alonzo Herndon built.',
+      summaryCitations: [{ sourceId: 'herndon-home-museum', locator: 'History of the Home' }],
       scope: 'atlanta',
       coordinates: [-84.4067828, 33.7558062],
       precision: 'address',

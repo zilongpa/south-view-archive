@@ -71,6 +71,9 @@ export const placeSchema = z.object({
   precision: z.enum(['reference', 'address', 'verified', 'unmapped']),
   locationNote: z.string(),
   coordinateCitations: z.array(citationSchema),
+  /** What this place is, independent of any one person. Empty for places described only by relationships. */
+  summary: z.string().default(''),
+  summaryCitations: z.array(citationSchema).default([]),
 });
 export const relationSchema = z.object({
   creditIds: z.array(z.string()).default(['initial-compilation']),

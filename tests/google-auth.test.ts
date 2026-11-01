@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import test, { type TestContext } from 'node:test';
 import { getArchive } from '@southview/db';
 import { createStore, setStoreForTests } from '@southview/db/connection';
@@ -10,9 +10,14 @@ import {
   reviewSubmission,
 } from '@southview/db/community';
 import { createAuth, getSignInMethods } from '@southview/services/auth';
-import { authAvailable } from '@southview/services/mail';
 import { safeCommunityNext, submissionInputSchema } from '@southview/validators';
 import { GET, POST } from '../apps/nextjs/src/app/api/community/[...path]/route';
+import {
+  googleTestClient,
+  insertLocalUser,
+  mockGoogle,
+  type GoogleProfile,
+} from './helpers/google';
 
 const origin = 'http://127.0.0.1:3000';
 const environment = {
@@ -21,42 +26,10 @@ const environment = {
   BETTER_AUTH_URL: origin,
   NEXT_PUBLIC_SITE_URL: origin,
   BETTER_AUTH_SECRET: 'google-flow-test-secret-at-least-thirty-two-bytes',
-  GOOGLE_CLIENT_ID: 'south-view-test.apps.googleusercontent.com',
-  GOOGLE_CLIENT_SECRET: 'private-test-google-client-secret',
-  MAIL_MODE: 'disabled',
+  GOOGLE_CLIENT_ID: googleTestClient.id,
+  GOOGLE_CLIENT_SECRET: googleTestClient.secret,
 };
-const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const keyId = 'local-google-test-key';
-const jwk = { ...publicKey.export({ format: 'jwk' }), kid: keyId, use: 'sig', alg: 'RS256' };
-type Profile = { sub: string; email: string; email_verified: boolean; name?: string; aud?: string };
 type Auth = Awaited<ReturnType<typeof createAuth>>;
-
-function signedToken(profile: Profile) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: keyId, typ: 'JWT' })).toString(
-    'base64url',
-  );
-  const payload = Buffer.from(
-    JSON.stringify({
-      iss: 'https://accounts.google.com',
-      aud: environment.GOOGLE_CLIENT_ID,
-      iat: now,
-      exp: now + 600,
-      name: 'Private Google Account Name',
-      picture: 'https://example.org/private-account-photo.jpg',
-      ...profile,
-    }),
-  ).toString('base64url');
-  const input = `${header}.${payload}`;
-  return `${input}.${sign('RSA-SHA256', Buffer.from(input), privateKey).toString('base64url')}`;
-}
-
-function cookieOf(response: Response) {
-  return response.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
-}
 
 async function setup(t: TestContext) {
   const previous = Object.fromEntries(
@@ -65,44 +38,8 @@ async function setup(t: TestContext) {
   Object.assign(process.env, environment);
   const store = await createStore({ mode: 'local', path: 'memory://', seed: false });
   setStoreForTests(store);
-  let otp = '';
-  const auth = await createAuth(store, environment, async (_email, value) => {
-    otp = value;
-  });
-  const codes = new Map<string, { profile: Profile; challenge: string }>();
-  // Only Google's network boundary is mocked. The real Better Auth handlers, state,
-  // cookies, PKCE exchange, account linking and database adapter run below.
-  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    if (request.url === 'https://www.googleapis.com/oauth2/v3/certs')
-      return Response.json({ keys: [jwk] });
-    assert.equal(
-      request.url,
-      'https://oauth2.googleapis.com/token',
-      'No unexpected network access',
-    );
-    const body = new URLSearchParams(await request.text());
-    const code = body.get('code') ?? '';
-    const item = codes.get(code);
-    codes.delete(code);
-    if (!item) return Response.json({ error: 'invalid_grant' }, { status: 400 });
-    assert.equal(body.get('redirect_uri'), `${origin}/api/auth/callback/google`);
-    assert.equal(body.get('client_id'), environment.GOOGLE_CLIENT_ID);
-    assert.equal(body.get('client_secret'), environment.GOOGLE_CLIENT_SECRET);
-    assert.equal(
-      createHash('sha256')
-        .update(body.get('code_verifier') ?? '')
-        .digest('base64url'),
-      item.challenge,
-    );
-    return Response.json({
-      access_token: `private-access-token-${item.profile.sub}`,
-      token_type: 'Bearer',
-      expires_in: 3600,
-      scope: 'openid email profile',
-      id_token: signedToken(item.profile),
-    });
-  });
+  const auth = await createAuth(store, environment);
+  const google = mockGoogle(t, origin);
   t.after(async () => {
     setStoreForTests(undefined);
     await store.close();
@@ -111,56 +48,16 @@ async function setup(t: TestContext) {
       else process.env[key] = value;
     }
   });
-  async function begin(body: Record<string, unknown> = {}) {
-    const response = await post(auth, '/sign-in/social', {
-      provider: 'google',
-      callbackURL: '/my-contributions',
-      errorCallbackURL: '/sign-in?next=%2Fmy-contributions',
-      ...body,
-    });
-    assert.equal(response.status, 200, await response.clone().text());
-    const url = new URL((await response.json()).url);
-    return { url, cookie: cookieOf(response), state: url.searchParams.get('state')! };
-  }
-  async function finish(
-    flow: Awaited<ReturnType<typeof begin>>,
-    profile: Profile,
-    cookie = flow.cookie,
-  ) {
-    const code = randomUUID();
-    codes.set(code, { profile, challenge: flow.url.searchParams.get('code_challenge')! });
-    return auth.handler(
-      new Request(
-        `${origin}/api/auth/callback/google?${new URLSearchParams({ state: flow.state, code })}`,
-        {
-          headers: { cookie },
-        },
-      ),
-    );
-  }
-  async function google(profile: Profile) {
-    const result = await finish(await begin(), profile);
-    assert.equal(result.status, 302);
-    assert.equal(new URL(result.headers.get('location')!, origin).pathname, '/my-contributions');
-    const cookie = cookieOf(result);
-    const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
-    assert.ok(session);
-    return { cookie, session };
-  }
-  async function email(email: string) {
-    assert.equal(
-      (await post(auth, '/email-otp/send-verification-otp', { email, type: 'sign-in' })).status,
-      200,
-    );
-    const response = await post(auth, '/sign-in/email-otp', {
-      email,
-      otp,
-      name: 'Existing private account',
-    });
-    assert.equal(response.status, 200);
-    return (await response.json()).user as { id: string; name: string; email: string };
-  }
-  return { auth, store, begin, finish, google, email };
+  type Flow = Awaited<ReturnType<typeof google.begin>>;
+  return {
+    auth,
+    store,
+    begin: (body?: Record<string, unknown>) => google.begin(auth, body),
+    finish: (flow: Flow, profile: GoogleProfile, cookie?: string) =>
+      google.finish(auth, flow, profile, cookie),
+    google: (profile: GoogleProfile) => google.signIn(auth, profile),
+    email: (address: string) => insertLocalUser(store, address),
+  };
 }
 
 function post(auth: Auth, path: string, body: unknown, originHeader = origin) {
@@ -189,23 +86,19 @@ function community(path: string, cookie?: string, receipt?: string, method = 'GE
   });
 }
 
-test('Google capability is independent of email, complete credentials and secure production config are required', (t) => {
+test('Google capability requires complete credentials and secure production config', (t) => {
   const warnings: string[] = [];
   t.mock.method(console, 'warn', (message: string) => {
     warnings.push(message);
   });
-  assert.deepEqual(getSignInMethods(environment), { emailOtp: false, google: true });
-  assert.equal(authAvailable(environment), false);
-  assert.deepEqual(
-    getSignInMethods({ ...environment, GOOGLE_CLIENT_SECRET: '', MAIL_MODE: 'local' }),
-    { emailOtp: true, google: false },
-  );
+  assert.deepEqual(getSignInMethods(environment), { google: true });
+  assert.deepEqual(getSignInMethods({ ...environment, GOOGLE_CLIENT_SECRET: '' }), {
+    google: false,
+  });
   assert.deepEqual(getSignInMethods({ ...environment, ARCHIVE_DATA_MODE: 'fixture' }), {
-    emailOtp: false,
     google: false,
   });
   assert.deepEqual(getSignInMethods({ ...environment, NODE_ENV: 'production' }), {
-    emailOtp: false,
     google: false,
   });
   assert.deepEqual(
@@ -214,7 +107,7 @@ test('Google capability is independent of email, complete credentials and secure
       NODE_ENV: 'production',
       BETTER_AUTH_URL: 'https://archive.example.org',
     }),
-    { emailOtp: false, google: true },
+    { google: true },
   );
   assert.equal(getSignInMethods({ ...environment, BETTER_AUTH_SECRET: 'short' }).google, false);
   assert.ok(warnings.length > 0);
@@ -310,7 +203,7 @@ test('mock Google callback creates a durable account, repeat sign-in reuses it, 
   assert.ok(accounts.rows[0]!.access_token);
   assert.equal(accounts.rows[0]!.access_token.includes('private-access-token'), false);
   assert.equal(accounts.rows[0]!.refresh_token, null);
-  const reopened = await createAuth(store, environment, async () => {});
+  const reopened = await createAuth(store, environment);
   assert.equal(
     (await reopened.api.getSession({ headers: new Headers({ cookie: first.cookie }) }))?.user.id,
     first.session.user.id,
@@ -331,7 +224,7 @@ test('mock Google callback creates a durable account, repeat sign-in reuses it, 
   );
 });
 
-test('same verified email links to the existing account without replacing name, submissions or reviewer grant', async (t) => {
+test('same verified email links to an existing local account without replacing name, submissions or reviewer grant', async (t) => {
   const { store, email, google } = await setup(t);
   const user = await email('existing@example.org');
   await store.query('INSERT INTO community.reviewers (user_id, granted_by) VALUES ($1, $2)', [

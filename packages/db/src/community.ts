@@ -39,7 +39,6 @@ type SubmissionRow = {
   published_entry_id: string | null;
   created_at: Date | string;
   updated_at: Date | string;
-  mail_status: string | null;
 };
 type ReviewRow = {
   id: string;
@@ -48,7 +47,7 @@ type ReviewRow = {
   decision: ReviewInput;
   created_at: Date | string;
 };
-const privateSubmissionSelect = `SELECT s.id, s.client_request_id, s.receipt_hash, s.user_id, s.status, s.published_entry_id, s.created_at, s.updated_at, s.mail_status, s.input || jsonb_build_object('privateName', c.private_name, 'email', c.email) AS input FROM community.submissions s JOIN community.contacts c ON c.submission_id=s.id`;
+const privateSubmissionSelect = `SELECT s.id, s.client_request_id, s.receipt_hash, s.user_id, s.status, s.published_entry_id, s.created_at, s.updated_at, s.input || jsonb_build_object('privateName', c.private_name, 'email', c.email) AS input FROM community.submissions s JOIN community.contacts c ON c.submission_id=s.id`;
 function withoutContact(input: SubmissionInput) {
   const { privateName: _privateName, email: _email, ...content } = input;
   return content;
@@ -132,7 +131,6 @@ async function recordFor(tx: Store, row: SubmissionRow, actor: Actor): Promise<S
     supplements,
     reviews,
     publishedEntryId: row.published_entry_id,
-    ...(row.mail_status ? { mailStatus: row.mail_status } : {}),
   };
 }
 async function checkPerson(tx: Store, id: string) {
@@ -401,6 +399,44 @@ export async function claimSubmission(id: string, actor: Actor) {
 }
 
 type PublicTable = 'persons' | 'places' | 'person_places' | 'contributions' | 'sources' | 'credits';
+type BiographyParagraph = Person['biography'][number];
+/**
+ * Where an approved biography passage lands. A correction replaces the paragraph it concerns,
+ * an addition follows the paragraph it was written under, and anything else goes at the end.
+ * Anchors are the stored paragraph id or, for the initial compilation, the paragraph's index.
+ * Returns null when a correction's paragraph can no longer be found.
+ */
+export function placeParagraph(
+  biography: BiographyParagraph[],
+  paragraph: BiographyParagraph,
+  placement: { kind: string; anchor?: string; originalText?: string },
+): BiographyParagraph[] | null {
+  const keyed = biography
+    .map((item, index) => ({ item, key: item.id ?? String(index) }))
+    .filter(({ item }) => item.id !== paragraph.id);
+  const rest = keyed.map(({ item }) => item);
+  let index =
+    placement.anchor === undefined ? -1 : keyed.findIndex(({ key }) => key === placement.anchor);
+  if (placement.kind !== 'correction') {
+    if (index < 0) return [...rest, paragraph];
+    return [...rest.slice(0, index + 1), paragraph, ...rest.slice(index + 1)];
+  }
+  const original = placement.originalText?.trim();
+  if (original && rest[index]?.text.trim() !== original)
+    index = rest.findIndex((item) => item.text.trim() === original);
+  if (index < 0) return null;
+  const previous = rest[index]!;
+  const replaced: BiographyParagraph = {
+    ...paragraph,
+    id: previous.id ?? paragraph.id,
+    citations: [...previous.citations, ...paragraph.citations].filter(
+      (citation, i, all) => all.findIndex((other) => other.sourceId === citation.sourceId) === i,
+    ),
+    creditIds: [...new Set([...previous.creditIds, ...paragraph.creditIds])],
+  };
+  return rest.map((item, i) => (i === index ? replaced : item));
+}
+
 async function saveProjection(
   tx: Store,
   submissionId: string,
@@ -549,7 +585,17 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       citations,
       creditIds: [creditId],
     };
-    person.biography = [...person.biography.filter((p) => p.id !== paragraph.id), paragraph];
+    const placed = placeParagraph(person.biography, paragraph, {
+      kind: input.kind,
+      anchor: input.placement?.blockId,
+      originalText: input.placement?.originalText,
+    });
+    if (!placed)
+      throw new DomainError(
+        'BAD_REQUEST',
+        'The paragraph this correction concerns has changed since it was written. Publish it as a community entry, or edit the text to match the current biography.',
+      );
+    person.biography = placed;
     await saveProjection(tx, row.id, reviewId, 'persons', person);
   }
   if (review.applyTo === 'place') {
@@ -592,6 +638,9 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       precision: patch.precision,
       locationNote: patch.locationNote,
       coordinateCitations: patch.coordinates ? citations : [],
+      ...(patch.summary !== undefined && patch.summary !== (current?.summary ?? '')
+        ? { summary: patch.summary, summaryCitations: citations }
+        : {}),
       creditIds: [
         ...new Set([
           ...(Array.isArray(current?.creditIds) ? (current.creditIds as string[]) : []),
@@ -600,15 +649,34 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       ],
     });
     await saveProjection(tx, row.id, reviewId, 'places', place);
-    const relationId = `relation-${row.id}`;
+    // An in-page edit of an existing place keeps that relationship's id so nothing is duplicated.
+    const edited =
+      input.kind === 'correction' && input.placement?.blockId
+        ? (
+            await tx.query<{
+              data: {
+                personId?: string;
+                placeId?: string;
+                citations?: { sourceId: string }[];
+                creditIds?: string[];
+              };
+            }>('SELECT data FROM archive.person_places WHERE id = $1', [input.placement.blockId])
+          ).rows[0]?.data
+        : undefined;
+    const reuse = !!edited && edited.personId === personId && edited.placeId === place.id;
     const relation = relationSchema.parse({
-      id: relationId,
+      id: reuse ? input.placement!.blockId : `relation-${row.id}`,
       personId,
       placeId: place.id,
       label: patch.relationship,
       description: body,
-      citations,
-      creditIds: [creditId],
+      citations: reuse
+        ? [...(edited.citations ?? []), ...citations].filter(
+            (citation, i, all) =>
+              all.findIndex((other) => other.sourceId === citation.sourceId) === i,
+          )
+        : citations,
+      creditIds: reuse ? [...new Set([...(edited.creditIds ?? []), creditId])] : [creditId],
     });
     await saveProjection(tx, row.id, reviewId, 'person_places', relation);
   }
@@ -846,36 +914,6 @@ export async function getPublicPhoto(id: string): Promise<SubmissionPhoto | null
     )
   ).rows[0];
   return row?.data ?? null;
-}
-export async function setMailStatus(id: string, status: string) {
-  const store = await writableStore();
-  await store.transaction(async (tx) => {
-    await tx.query(
-      'INSERT INTO community.mail_events (id, submission_id, status) VALUES ($1,$2,$3)',
-      [randomUUID(), id, status.slice(0, 200)],
-    );
-    await tx.query('UPDATE community.submissions SET mail_status=$2 WHERE id=$1', [
-      id,
-      status.slice(0, 200),
-    ]);
-  });
-}
-/** Review notifications append delivery evidence without changing receipt delivery status. */
-export async function recordMailEvent(id: string, status: string) {
-  const store = await writableStore();
-  await store.query(
-    'INSERT INTO community.mail_events (id, submission_id, status) VALUES ($1,$2,$3)',
-    [randomUUID(), id, status.slice(0, 200)],
-  );
-}
-/** Finalization is durable before delivery. Only one concurrent request may start receipt delivery. */
-export async function claimReceiptMail(id: string): Promise<boolean> {
-  const store = await writableStore();
-  const result = await store.query(
-    "UPDATE community.submissions SET mail_status='sending' WHERE id=$1 AND mail_status IS NULL AND status='pending' RETURNING id",
-    [id],
-  );
-  return result.rows.length === 1;
 }
 /** The key may include an IP/email, but only its hash is persisted. */
 export async function consumeRateLimit(

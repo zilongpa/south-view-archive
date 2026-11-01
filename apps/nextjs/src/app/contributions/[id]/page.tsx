@@ -4,7 +4,7 @@ import { cache } from 'react';
 import { getArchive } from '@southview/db';
 import { CommunityShell } from '@/components/community-shell';
 import { CommunityEntry } from '@/components/community-entry';
-import { safeArchiveReturn } from '@/lib/stories-state';
+import { safeArchiveReturn } from '@/lib/archive-return';
 export const dynamic = 'force-dynamic';
 const readArchive = cache(getArchive);
 export async function generateMetadata({
@@ -45,9 +45,7 @@ export default async function ContributionPage({
       compact
       hideIntro
       backHref={safeArchiveReturn(query.from)}
-      backLabel={
-        safeArchiveReturn(query.from).startsWith('/stories') ? 'Back to stories' : 'Back to the map'
-      }
+      backLabel="Back to the map"
     >
       <CommunityEntry entry={entry} archive={archive} returnTo={safeArchiveReturn(query.from)} />
     </CommunityShell>

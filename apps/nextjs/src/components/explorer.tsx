@@ -2,27 +2,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useDetailResize } from './detail-resize';
 import {
   ArrowDownUp,
   ArrowRight,
   ArrowUpRight,
-  BookOpen,
   Check,
   ChevronRight,
   Copy,
-  Headphones,
   List,
   Map as MapIcon,
   MapPin,
   Search,
   SlidersHorizontal,
   Sprout,
+  UserRound,
   X,
 } from 'lucide-react';
 import './explorer-map.css';
-import { ProvidedBy } from './provided-by';
 import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
+import { soleOccupant } from '@/lib/place-mode';
 import {
   searchArchive,
   scopeIncludesPlace,
@@ -32,6 +32,7 @@ import {
 } from '@southview/validators';
 import { viewportState } from '@/lib/map-scope';
 import { displayPersonName } from '@/lib/person-name';
+import { copy } from '@/lib/copy';
 import {
   createPreviewController,
   previewSelection,
@@ -89,6 +90,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const [alphabetical, setAlphabetical] = useState(false);
   const detailRef = useRef<HTMLElement>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
+  const detailResize = useDetailResize();
   const triggerRef = useRef<HTMLElement | null>(null);
   const liveState = useRef(state);
   liveState.current = state;
@@ -193,29 +195,65 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     () => [...new Set(archive.people.flatMap((p) => p.themes))].sort(),
     [archive],
   );
-  const selected = archive.people.find((p) => p.id === state.person);
+  // A single-person grave is that person's marker and opens as the person, whichever way it
+  // was reached; shared places (crypts, churches, city hall) open as places.
+  const selected = archive.people.find(
+    (p) => p.id === (state.person ?? soleOccupant(archive, state.place)),
+  );
+  // The panel lists every place in the person's life, whichever view the map is in: a grave on
+  // its own says little, so the places they lived and worked follow it. The selected place
+  // comes first, then the places in the current view, then the rest.
+  const placeScope = (placeId: string) => archive.places.find((p) => p.id === placeId)?.scope;
   const selectedRelations = selected
     ? archive.relations
-        .filter(
-          (r) =>
-            r.personId === selected.id &&
-            archive.places.some(
-              (p) => p.id === r.placeId && scopeIncludesPlace(state.scope, p.scope),
-            ),
+        .filter((r) => r.personId === selected.id && placeScope(r.placeId))
+        .sort(
+          (a, b) =>
+            Number(b.placeId === state.place) - Number(a.placeId === state.place) ||
+            Number(scopeIncludesPlace(state.scope, placeScope(b.placeId)!)) -
+              Number(scopeIncludesPlace(state.scope, placeScope(a.placeId)!)),
         )
-        .sort((a, b) => Number(b.placeId === state.place) - Number(a.placeId === state.place))
     : [];
   const selectedPlace = archive.places.find(
     (p) =>
       p.id === (state.place ?? selectedRelations[0]?.placeId) &&
       selectedRelations.some((r) => r.placeId === p.id),
   );
-  const materials = selected
-    ? archive.materials.filter(
-        (m) => m.personId === selected.id || m.relatedPersonIds.includes(selected.id),
-      )
+  // A marker selects the place itself; the panel then lists everyone connected to it.
+  const placeOnly = selected ? null : (archive.places.find((p) => p.id === state.place) ?? null);
+  const placePeople = placeOnly
+    ? archive.relations
+        .filter((r) => r.placeId === placeOnly.id)
+        .flatMap((relation) => {
+          const person = archive.people.find((p) => p.id === relation.personId);
+          return person ? [{ relation, person }] : [];
+        })
     : [];
+  const hasSelection = !!selected || !!placeOnly;
   const preview = archive.people.find((p) => p.id === previewTarget?.personId);
+  const previewPlace =
+    previewTarget?.placeId && !soleOccupant(archive, previewTarget.placeId)
+      ? archive.places.find((place) => place.id === previewTarget.placeId)
+      : undefined;
+  const previewPeople = previewTarget?.placeId
+    ? archive.relations
+        .filter((r) => r.placeId === previewTarget.placeId)
+        .map((r) => archive.people.find((p) => p.id === r.personId)?.name)
+        .filter((name): name is string => !!name)
+    : [];
+  const selectPlace = useCallback(
+    (placeId: string) => {
+      if (!archive.places.some((p) => p.id === placeId)) return;
+      previewController.clear();
+      triggerRef.current = document.activeElement as HTMLElement;
+      update({ person: null, place: placeId, viewport: null }, true);
+      setResetEpoch((n) => n + 1);
+      setFocusSelection(true);
+      if (window.matchMedia('(max-width: 760px)').matches) setShowResults(false);
+      requestAnimationFrame(() => detailRef.current?.focus({ preventScroll: true }));
+    },
+    [archive, update, previewController],
+  );
   const selectPerson = useCallback(
     (personId: string, placeId?: string) => {
       const selection = previewSelection(archive, liveState.current.scope, { personId, placeId });
@@ -242,7 +280,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (liveState.current.person) closeDetail();
+        if (liveState.current.person || liveState.current.place) closeDetail();
         else previewController.clear();
       }
     };
@@ -269,13 +307,18 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     },
     [archive, update],
   );
-  const detailHref = selected
-    ? `/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}`
+  const recordPath = selected
+    ? `/people/${selected.id}`
+    : placeOnly
+      ? `/places/${placeOnly.id}`
+      : '';
+  const detailHref = recordPath
+    ? `${recordPath}?from=${encodeURIComponent(serializeExploreState(state))}`
     : '';
   async function copyLink(kind: 'map' | 'person') {
     const origin = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
     const url = new URL(
-      kind === 'person' && selected ? `/people/${selected.id}` : serializeExploreState(state, true),
+      kind === 'person' && recordPath ? recordPath : serializeExploreState(state, true),
       origin,
     ).href;
     try {
@@ -288,7 +331,8 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   }
   return (
     <div
-      className={`explorer map-explorer ${state.embed ? 'is-embedded' : ''} ${showResults ? 'results-open' : ''} ${selected ? 'has-selection' : ''}`}
+      className={`explorer map-explorer ${state.embed ? 'is-embedded' : ''} ${showResults ? 'results-open' : ''} ${hasSelection ? 'has-selection' : ''}`}
+      style={detailResize.style}
     >
       <SiteNavigation
         overlay
@@ -307,7 +351,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       <main id="main-content" tabIndex={-1}>
         <h1 className="sr-only">Explore South-View and Atlanta</h1>
         <section className="atlas" aria-label="Explore the collection">
-          <div className={`atlas-body ${selected ? 'has-selection' : ''}`}>
+          <div className={`atlas-body ${hasSelection ? 'has-selection' : ''}`}>
             <aside className="people-sidebar" aria-label="Search and browse people">
               <div className="search-controls">
                 <label className="search-box" htmlFor="archive-search">
@@ -379,14 +423,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         <span>{alphabetical ? 'A–Z' : 'Sort'}</span>
                       </button>
                     </div>
-                    <Link
-                      className="map-stories-link"
-                      href={`/stories?${new URLSearchParams({ q: state.q, theme: state.theme })}`}
-                      target={state.embed ? '_blank' : undefined}
-                      rel={state.embed ? 'noopener noreferrer' : undefined}
-                    >
-                      Search stories & photographs <ArrowUpRight size={15} aria-hidden="true" />
-                    </Link>
                   </div>
                   <div className="collection-heading">
                     <h2>The collection</h2>
@@ -486,7 +522,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   viewport={state.viewport}
                   resetEpoch={resetEpoch}
                   focusSelection={focusSelection}
-                  onSelect={selectPerson}
+                  onSelect={(_personId, placeId) => {
+                    const occupant = soleOccupant(archive, placeId);
+                    if (occupant) selectPerson(occupant, placeId);
+                    else selectPlace(placeId);
+                  }}
                   onPreview={onPreview}
                   onViewport={onViewport}
                   onFailure={() => setShowResults(true)}
@@ -500,20 +540,22 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   <span>Opening the map…</span>
                 </div>
               )}
-              {preview && previewTarget && !selected && (
+              {preview && previewTarget && !hasSelection && (
                 <MapPreview
                   target={previewTarget}
                   person={preview}
-                  place={archive.places.find((place) => place.id === previewTarget.placeId)}
+                  place={previewPlace}
+                  people={previewPeople}
                 />
               )}
-              {selected && (
+              {hasSelection && (
                 <aside
                   ref={detailRef}
-                  className="detail-panel"
+                  className={`detail-panel ${detailResize.panelClass}`}
                   tabIndex={-1}
-                  aria-label={`${selected.name} preview`}
+                  aria-label={`${selected ? selected.name : placeOnly!.name} preview`}
                 >
+                  {detailResize.handle}
                   <div className="detail-top">
                     <span className="eyebrow">FROM THE COLLECTION</span>
                     <button onClick={closeDetail} aria-label="Close person preview">
@@ -521,186 +563,163 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                     </button>
                   </div>
                   <div className="detail-scroll" ref={detailScrollRef}>
-                    <div className="detail-person">
-                      <Monogram person={selected} large />
-                      <div className="detail-identity">
-                        <span className="theme-label">{selected.themes.join(' · ')}</span>
-                        <h2>{displayPersonName(selected.name)}</h2>
-                        {(selected.birthYear || selected.deathYear) && (
-                          <p className="person-years">
-                            {selected.birthYear
-                              ? `${selected.birthYear} — ${selected.deathYear ?? ''}`
-                              : `Remembered · ${selected.deathYear}`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="detail-summary">{selected.summary}</p>
-                    <ProvidedBy
-                      creditIds={selected.creditIds}
-                      title={`${selected.name}: overview`}
-                      data={archive}
-                    />
-                    <div className="detail-citation-links">
-                      {selected.summaryCitations.map((c) => {
-                        const source = archive.sources.find((s) => s.id === c.sourceId);
-                        return source ? (
-                          <a
-                            key={c.sourceId + c.locator}
-                            href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${source.id}`}
-                          >
-                            <BookOpen size={16} aria-hidden="true" />
-                            <span>
-                              [{archive.sources.findIndex((s) => s.id === source.id) + 1}]{' '}
-                              {source.publisher}
-                              {c.locator ? ` · ${c.locator}` : ''}
-                            </span>
-                            <ArrowUpRight size={16} aria-hidden="true" />
-                          </a>
-                        ) : null;
-                      })}
-                    </div>
-                    <section className="connected-places">
-                      <h3>
-                        <MapPin size={16} />
-                        {state.scope === 'cemetery' ? 'At South-View' : 'Atlanta & South-View'}
-                      </h3>
-                      {selectedRelations.length === 0 ? (
-                        <p className="quiet-note">
-                          No location has been documented in this area yet. The full record is still
-                          available.
+                    {placeOnly && (
+                      <>
+                        <div className="detail-place">
+                          <span className="theme-label">
+                            {placeOnly.scope === 'cemetery'
+                              ? 'Grave marker · South-View'
+                              : 'Place · Atlanta'}
+                          </span>
+                          <h2>{placeOnly.name}</h2>
+                          {placeOnly.address && <p className="person-years">{placeOnly.address}</p>}
+                        </div>
+                        <p className="detail-summary">
+                          {placeOnly.summary ||
+                            placePeople[0]?.relation.description ||
+                            placeOnly.locationNote}
                         </p>
-                      ) : (
-                        selectedRelations.map((relation) => {
-                          const place = archive.places.find((p) => p.id === relation.placeId)!;
-                          return (
-                            <div
-                              className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''}`}
+                        <section className="connected-places">
+                          <h3>
+                            <UserRound size={16} />
+                            {placeOnly.scope === 'cemetery'
+                              ? 'Remembered here'
+                              : placePeople.length === 1
+                                ? 'Connected here'
+                                : 'People connected here'}
+                          </h3>
+                          {placePeople.length === 0 && (
+                            <p className="quiet-note">
+                              No person has been connected to this place yet.
+                            </p>
+                          )}
+                          {placePeople.map(({ person, relation }) => (
+                            <button
+                              type="button"
+                              className="place-person-row"
                               key={relation.id}
+                              onClick={() => selectPerson(person.id, placeOnly.id)}
                             >
-                              <span className="eyebrow">{relation.label}</span>
-                              <button
-                                disabled={!place.coordinates}
-                                aria-current={
-                                  place.id === selectedPlace?.id ? 'location' : undefined
-                                }
-                                onClick={() => {
-                                  setFocusSelection(true);
-                                  update({ place: place.id, viewport: null }, true);
-                                  setResetEpoch((n) => n + 1);
-                                }}
-                              >
-                                <strong>{place.name}</strong>
-                                <ArrowUpRight size={15} />
-                              </button>
-                              <p>{place.locationNote}</p>
-                              <ProvidedBy
-                                creditIds={[
-                                  ...new Set([...place.creditIds, ...relation.creditIds]),
-                                ]}
-                                title={place.name}
-                                data={archive}
-                              />
-                              <div className="place-source-links">
-                                <Link
-                                  href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${relation.citations[0]?.sourceId}`}
-                                >
-                                  Historical connection [
-                                  {archive.sources.findIndex(
-                                    (s) => s.id === relation.citations[0]?.sourceId,
-                                  ) + 1}
-                                  ]
-                                </Link>
-                                {place.coordinateCitations.map((c) => (
-                                  <Link
-                                    key={c.sourceId}
-                                    href={`/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}#source-${c.sourceId}`}
-                                  >
-                                    Location source [
-                                    {archive.sources.findIndex((s) => s.id === c.sourceId) + 1}]
-                                  </Link>
-                                ))}
-                              </div>
-                              <span className="precision-badge">
-                                {place.precision === 'reference'
-                                  ? 'Reference location'
-                                  : place.precision === 'address'
-                                    ? 'Address-level location'
-                                    : place.precision === 'unmapped'
-                                      ? 'Location not yet mapped'
-                                      : 'Documented location'}
+                              <Monogram person={person} />
+                              <span>
+                                <strong>{displayPersonName(person.name)}</strong>
+                                <small>
+                                  {person.birthYear
+                                    ? `${person.birthYear} — ${person.deathYear ?? ''} · `
+                                    : ''}
+                                  {relation.label}
+                                </small>
                               </span>
-                            </div>
-                          );
-                        })
-                      )}
-                      <button
-                        className="other-scope"
-                        onClick={() =>
-                          changeScope(state.scope === 'cemetery' ? 'atlanta' : 'cemetery')
-                        }
-                      >
-                        {state.scope === 'cemetery'
-                          ? 'See their life across Atlanta'
-                          : 'See their resting place'}
-                        <ArrowRight size={15} />
-                      </button>
-                    </section>
-                    {materials.length > 0 && (
-                      <section className="detail-materials">
-                        <h3>From the archive</h3>
-                        {materials.map((m) => (
-                          <a
-                            className="material-mini"
-                            key={m.id}
-                            href={archive.sources.find((s) => s.id === m.sourceId)?.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {m.kind === 'oral-history' ? (
-                              <Headphones size={21} />
-                            ) : (
-                              <BookOpen size={21} />
+                              <ArrowRight size={15} />
+                            </button>
+                          ))}
+                          <p className="quiet-note">
+                            {placeOnly.precision === 'reference'
+                              ? 'Reference position, not independently verified.'
+                              : placeOnly.precision === 'address'
+                                ? 'Address-level position.'
+                                : placeOnly.precision === 'verified'
+                                  ? 'Verified position.'
+                                  : 'Not yet mapped.'}
+                          </p>
+                        </section>
+                      </>
+                    )}
+                    {selected && (
+                      <>
+                        <div className="detail-person">
+                          <Monogram person={selected} large />
+                          <div className="detail-identity">
+                            <span className="theme-label">{selected.themes.join(' · ')}</span>
+                            <h2>{displayPersonName(selected.name)}</h2>
+                            {(selected.birthYear || selected.deathYear) && (
+                              <p className="person-years">
+                                {selected.birthYear
+                                  ? `${selected.birthYear} — ${selected.deathYear ?? ''}`
+                                  : `Remembered · ${selected.deathYear}`}
+                              </p>
                             )}
-                            <span>
-                              <small>
-                                {m.kind === 'oral-history' ? 'ORAL HISTORY' : 'DOCUMENT'}
-                              </small>
-                              <strong>{m.title}</strong>
-                              <small>
-                                {m.creditIds
-                                  .map(
-                                    (id) =>
-                                      archive.credits.find((credit) => credit.id === id)
-                                        ?.displayName,
-                                  )
-                                  .filter(Boolean)
-                                  .join(', ')}{' '}
-                                — {m.title}
-                              </small>
-                            </span>
-                            <ArrowUpRight size={15} />
-                          </a>
-                        ))}
-                      </section>
+                          </div>
+                        </div>
+                        <p className="detail-summary">{selected.summary}</p>
+                        <section className="connected-places">
+                          <h3>
+                            <MapPin size={16} />
+                            Atlanta &amp; South-View
+                          </h3>
+                          {selectedRelations.length === 0 ? (
+                            <p className="quiet-note">
+                              No location has been documented in this area yet.
+                            </p>
+                          ) : (
+                            selectedRelations.map((relation) => {
+                              const place = archive.places.find((p) => p.id === relation.placeId)!;
+                              return (
+                                <div
+                                  className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''}`}
+                                  key={relation.id}
+                                >
+                                  <span className="eyebrow">
+                                    {relation.label}
+                                    {place.precision === 'reference'
+                                      ? ' · reference position'
+                                      : place.precision === 'unmapped'
+                                        ? ' · not yet mapped'
+                                        : ''}
+                                  </span>
+                                  <button
+                                    disabled={!place.coordinates}
+                                    aria-current={
+                                      place.id === selectedPlace?.id ? 'location' : undefined
+                                    }
+                                    onClick={() => {
+                                      setFocusSelection(true);
+                                      // A place outside the current view brings its view along.
+                                      update(
+                                        {
+                                          scope: scopeIncludesPlace(state.scope, place.scope)
+                                            ? state.scope
+                                            : place.scope,
+                                          place: place.id,
+                                          viewport: null,
+                                        },
+                                        true,
+                                      );
+                                      setResetEpoch((n) => n + 1);
+                                    }}
+                                  >
+                                    <strong>{place.name}</strong>
+                                    <ArrowUpRight size={15} />
+                                  </button>
+                                  <p className="relation-note">{relation.description}</p>
+                                </div>
+                              );
+                            })
+                          )}
+                          <button
+                            className="other-scope"
+                            onClick={() =>
+                              changeScope(state.scope === 'cemetery' ? 'atlanta' : 'cemetery')
+                            }
+                          >
+                            {state.scope === 'cemetery'
+                              ? 'See their life across Atlanta'
+                              : 'See their resting place'}
+                            <ArrowRight size={15} />
+                          </button>
+                        </section>
+                      </>
                     )}
                   </div>
                   <div className="detail-bottom">
-                    <Link
-                      className="contribute-record"
-                      href={`/contribute?person=${selected.id}`}
-                      target={state.embed ? '_blank' : undefined}
-                      rel={state.embed ? 'noopener noreferrer' : undefined}
-                    >
-                      Share a memory or source <ArrowUpRight size={17} />
-                    </Link>
                     <Link
                       className="full-record-link"
                       href={detailHref}
                       target={state.embed ? '_blank' : undefined}
                       rel={state.embed ? 'noopener noreferrer' : undefined}
                     >
-                      Read the full record <ArrowRight size={17} />
+                      <span>Open the full page</span>
+                      <ArrowRight size={17} />
                       {state.embed && <span className="sr-only"> (opens in a new tab)</span>}
                     </Link>
                     <button className="copy-record" onClick={() => copyLink('person')}>

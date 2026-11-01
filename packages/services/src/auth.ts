@@ -4,7 +4,6 @@ import { getStore, type Store } from '@southview/db/connection';
 import { safeCommunityNext, safeSignInErrorCallback } from '@southview/validators';
 import { betterAuth } from 'better-auth/minimal';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
-import { emailOTP } from 'better-auth/plugins';
 import * as authSchema from './auth-schema';
 import {
   assertServer,
@@ -13,9 +12,8 @@ import {
   authSecret,
   type Environment,
 } from './config';
-import { authAvailable, sendLoginOTP } from './mail';
 
-export type SignInMethods = { google: boolean; emailOtp: boolean };
+export type SignInMethods = { google: boolean };
 const reportedGoogleConfigurationIssues = new Set<'incomplete' | 'invalid'>();
 
 /** Status contains no credentials and is safe for operational diagnostics. */
@@ -28,9 +26,9 @@ export function getGoogleConfigurationStatus(environment: Environment = process.
   return 'configured';
 }
 
-/** A mail outage or omitted SMTP configuration does not disable Google sign-in. */
+/** Google is the only account sign-in. The archive sends no email of any kind. */
 export function getSignInMethods(environment: Environment = process.env): SignInMethods {
-  if (environment.ARCHIVE_DATA_MODE === 'fixture') return { google: false, emailOtp: false };
+  if (environment.ARCHIVE_DATA_MODE === 'fixture') return { google: false };
   const googleStatus = getGoogleConfigurationStatus(environment);
   if (
     (googleStatus === 'incomplete' || googleStatus === 'invalid') &&
@@ -41,18 +39,11 @@ export function getSignInMethods(environment: Environment = process.env): SignIn
       'Google sign-in is disabled: configure both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET with valid values.',
     );
   }
-  return {
-    google: googleStatus === 'configured' && authConfigurationAvailable(environment),
-    emailOtp: authAvailable(environment),
-  };
+  return { google: googleStatus === 'configured' && authConfigurationAvailable(environment) };
 }
 
-/** Injection exists for isolated integration tests and administrative scripts, never HTTP input. */
-export async function createAuth(
-  store: Store,
-  environment: Environment = process.env,
-  deliverOTP: (email: string, otp: string) => Promise<void> = sendLoginOTP,
-) {
+/** The environment parameter exists for isolated integration tests, never HTTP input. */
+export async function createAuth(store: Store, environment: Environment = process.env) {
   assertServer();
   const baseURL = authBaseURL(environment);
   const signInMethods = getSignInMethods(environment);
@@ -100,11 +91,7 @@ export async function createAuth(
       storage: 'database',
       window: 60,
       max: 60,
-      customRules: {
-        '/email-otp/send-verification-otp': { window: 60, max: 3 },
-        '/sign-in/email-otp': { window: 60, max: 5 },
-        '/sign-in/social': { window: 60, max: 10 },
-      },
+      customRules: { '/sign-in/social': { window: 60, max: 10 } },
     },
     advanced: {
       disableOriginCheck: false,
@@ -163,46 +150,9 @@ export async function createAuth(
             },
           };
         }
-        if (context.path !== '/email-otp/send-verification-otp') return;
-        if (context.body?.type !== 'sign-in')
-          throw new APIError('BAD_REQUEST', { message: 'This verification flow is unavailable.' });
-        if (deliverOTP === sendLoginOTP && !authAvailable(environment))
-          throw new APIError('SERVICE_UNAVAILABLE', {
-            message: 'Sign-in email is unavailable. Please try again later.',
-          });
-        // Better Auth's default background helper catches mail errors. This request-local
-        // override awaits delivery and returns failure instead of an incorrect success.
-        return {
-          context: {
-            context: {
-              runInBackgroundOrAwait: async (delivery: Promise<unknown>) => {
-                try {
-                  await delivery;
-                } catch {
-                  throw new APIError('SERVICE_UNAVAILABLE', {
-                    message: 'Sign-in email is unavailable. Please try again later.',
-                  });
-                }
-              },
-            },
-          },
-        };
       }),
     },
-    plugins: [
-      emailOTP({
-        otpLength: 6,
-        expiresIn: 300,
-        allowedAttempts: 5,
-        storeOTP: 'hashed',
-        resendStrategy: 'rotate',
-        async sendVerificationOTP({ email, otp, type }) {
-          if (type !== 'sign-in') throw new Error('This verification flow is unavailable.');
-          await deliverOTP(email, otp);
-        },
-      }),
-    ],
-    // Never log OTPs, request bodies, email addresses, database URLs, or mail credentials.
+    // Never log request bodies, email addresses, database URLs, or OAuth credentials.
     logger: { disabled: true },
   });
 }

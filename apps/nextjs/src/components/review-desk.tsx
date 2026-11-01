@@ -45,6 +45,98 @@ import {
   VetPanel,
 } from './review-panels';
 
+type PlaceDraft = {
+  id: string;
+  name: string;
+  scope: 'cemetery' | 'atlanta';
+  lng: string;
+  lat: string;
+  precision: 'reference' | 'address' | 'verified' | 'unmapped';
+  note: string;
+  relationship: string;
+  summary: string;
+};
+/** In-page additions say where they belong; the desk starts there so one click publishes them. */
+function defaultApplyTo(record: SubmissionRecord): ReviewInput['applyTo'] {
+  const placement = record.input.placement;
+  if (!placement || record.input.kind === 'memory' || record.status === 'published') return 'entry';
+  if (placement.section === 'biography') return 'biography';
+  if (placement.section === 'places') return 'place';
+  return 'entry';
+}
+function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraft {
+  const empty: PlaceDraft = {
+    id: '',
+    name: '',
+    scope: 'cemetery',
+    lng: '',
+    lat: '',
+    precision: 'unmapped',
+    note: '',
+    relationship: '',
+    summary: '',
+  };
+  const placement = record.input.placement;
+  if (placement?.section !== 'places') return empty;
+  const existing = archive.places.find((place) => record.input.placeIds.includes(place.id));
+  if (existing) {
+    const moved = placement.proposedCoordinates;
+    const relation = archive.relations.find((item) => item.id === placement.blockId);
+    return {
+      id: existing.id,
+      name: placement.proposedPlaceName ?? existing.name,
+      scope: placement.proposedScope ?? existing.scope,
+      lng: moved ? String(moved[0]) : existing.coordinates ? String(existing.coordinates[0]) : '',
+      lat: moved ? String(moved[1]) : existing.coordinates ? String(existing.coordinates[1]) : '',
+      precision: moved ? 'reference' : existing.precision,
+      note: moved
+        ? `Position moved by the contributor; not independently verified. Previously: ${existing.locationNote}`
+        : existing.locationNote,
+      relationship: relation?.label ?? record.input.title,
+      summary: placement.proposedPlaceSummary ?? existing.summary,
+    };
+  }
+  const coordinates = placement.proposedCoordinates;
+  return {
+    ...empty,
+    name: placement.proposedPlaceName ?? '',
+    scope: placement.proposedScope ?? 'cemetery',
+    lng: coordinates ? String(coordinates[0]) : '',
+    lat: coordinates ? String(coordinates[1]) : '',
+    precision: coordinates ? 'reference' : 'unmapped',
+    note: coordinates
+      ? 'Position marked on the map by the contributor; not independently verified.'
+      : '',
+    relationship: record.input.title,
+    summary: placement.proposedPlaceSummary ?? '',
+  };
+}
+function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['applyTo']) {
+  const placement = record.input.placement;
+  if (!placement) return '';
+  if (placement.section === 'biography' && placement.blockId) {
+    const where =
+      record.input.kind === 'correction'
+        ? 'edited an existing paragraph in place. Publishing to the biography replaces that paragraph with the text above'
+        : 'wrote this under a specific paragraph. Publishing to the biography inserts it right after that paragraph';
+    return `The contributor ${where}${applyTo === 'biography' ? '.' : '; the current choice keeps it as a separate entry.'}`;
+  }
+  if (placement.section === 'places' && record.input.kind === 'correction') {
+    const changes = [
+      placement.proposedPlaceName ? 'renamed it' : '',
+      placement.proposedCoordinates ? 'moved its pin' : '',
+      placement.proposedPlaceSummary ? 'described the place itself' : '',
+      placement.originalText ? 'rewrote how it relates to this person' : '',
+    ].filter(Boolean);
+    return `The contributor edited an existing place in place${changes.length ? ` and ${changes.join(', ')}` : ''}. Publishing as a map place update changes that place and its link to this person; the earlier version stays recoverable by withdrawal.`;
+  }
+  if (placement.section === 'places')
+    return placement.proposedCoordinates
+      ? 'The contributor marked this place on the map. Its position is filled in below for you to confirm.'
+      : 'The contributor added this as a place on the person page. Its details are filled in below.';
+  return '';
+}
+
 export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   const params = useSearchParams();
   const [state, setState] = useState(() => parseReviewState(params));
@@ -380,7 +472,7 @@ function ReviewEditor({
     record.status === 'published' ? 'withdraw' : 'publish',
   );
   const readOnly = ['withdrawn', 'rejected', 'draft'].includes(record.status);
-  const [applyTo, setApplyTo] = useState<ReviewInput['applyTo']>('entry');
+  const [applyTo, setApplyTo] = useState<ReviewInput['applyTo']>(() => defaultApplyTo(record));
   const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [photoIds, setPhotoIds] = useState(record.photos.map((photo) => photo.id));
   const [photoEdits, setPhotoEdits] = useState(
@@ -391,16 +483,8 @@ function ReviewEditor({
       rights: photo.rights,
     })),
   );
-  const [place, setPlace] = useState({
-    id: '',
-    name: '',
-    scope: 'cemetery' as 'cemetery' | 'atlanta',
-    lng: '',
-    lat: '',
-    precision: 'unmapped' as 'reference' | 'address' | 'verified' | 'unmapped',
-    note: '',
-    relationship: '',
-  });
+  const [place, setPlace] = useState(() => initialPlace(record, archive));
+  const placementHint = placementExplanation(record, applyTo);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -439,6 +523,7 @@ function ReviewEditor({
             precision: chosen.precision,
             note: chosen.locationNote,
             relationship: '',
+            summary: chosen.summary,
           }
         : {
             id: '',
@@ -449,6 +534,7 @@ function ReviewEditor({
             precision: 'unmapped',
             note: '',
             relationship: '',
+            summary: '',
           },
     );
   }
@@ -511,6 +597,7 @@ function ReviewEditor({
                     precision: place.precision,
                     locationNote: place.note,
                     relationship: place.relationship,
+                    summary: place.summary,
                   },
                 }
               : {}),
@@ -701,17 +788,6 @@ function ReviewEditor({
                   }}
                 />
               </details>
-              <label className="community-check">
-                <input
-                  type="checkbox"
-                  checked={draft.featured}
-                  onChange={(event) => edit('featured', event.target.checked)}
-                />
-                <span>
-                  Include in Editor’s selections when published. Personal memories keep their
-                  Community memory label.
-                </span>
-              </label>
               <label className="community-field">
                 <span>Public text</span>
                 <textarea
@@ -852,6 +928,7 @@ function ReviewEditor({
                   Personal memories belong in clearly labeled community entries. Changes to factual
                   records need claim-appropriate evidence.
                 </small>
+                {placementHint && <small className="review-placement-hint">{placementHint}</small>}
               </label>
               <details>
                 <summary className="community-text-button">
@@ -908,6 +985,18 @@ function ReviewEditor({
                         value={place.name}
                         onChange={(event) =>
                           setPlace((previous) => ({ ...previous, name: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="community-field">
+                      <span>About this place (public)</span>
+                      <textarea
+                        value={place.summary}
+                        maxLength={4000}
+                        rows={3}
+                        placeholder="What this place is, independent of any one person. Shown on the map and the place page."
+                        onChange={(event) =>
+                          setPlace((previous) => ({ ...previous, summary: event.target.value }))
                         }
                       />
                     </label>
@@ -1105,7 +1194,11 @@ function ReviewEditor({
                   {applyTo === 'entry'
                     ? 'Independent community entry'
                     : applyTo === 'biography'
-                      ? 'Community entry and biography passage'
+                      ? record.input.kind === 'correction' && record.input.placement?.blockId
+                        ? 'Community entry; the edited paragraph replaces the current one'
+                        : record.input.placement?.blockId
+                          ? 'Community entry and a biography passage after the paragraph it was written under'
+                          : 'Community entry and biography passage'
                       : 'Community entry and map place update'}
                 </p>
                 {applyTo === 'place' && (
@@ -1136,7 +1229,7 @@ function ReviewEditor({
                   ? 'The published entry and its approved photographs will leave public view. The original and review history are retained.'
                   : action === 'reject'
                     ? 'The submission will remain private. Explain the decision to the contributor.'
-                    : 'Tell the contributor what to add through their private receipt page.'}
+                    : 'The contributor is not emailed. They see this message the next time they open their private receipt page or account, and the submission returns to review when they reply.'}
               </p>
             )}
             <label className="community-field">
@@ -1149,7 +1242,7 @@ function ReviewEditor({
                 onChange={(event) => edit('authorMessage', event.target.value)}
                 placeholder="Explain your decision and any information that would help."
               />
-              <small>The contributor can read this message on their private receipt page.</small>
+              <small>Shown only on the contributor’s private receipt page; no email is sent.</small>
             </label>
             <label className="community-field">
               <span>Internal review note</span>

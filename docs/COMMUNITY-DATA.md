@@ -4,11 +4,11 @@ Community submissions are persisted to the database. Guests can contribute, use 
 
 ## Three data modes
 
-| `ARCHIVE_DATA_MODE` | Behavior | Intended use |
-| --- | --- | --- |
-| `local` (default) | Persists PostgreSQL data in local PGlite; applies versioned migrations and imports the initial collection once on first creation. | Local development and complete submission/review demonstrations. |
-| `fixture` | Reads only the cited static initial collection; rejects submissions and all other community writes. | Read-only demonstrations and deterministic public-interface checks. |
-| `database` | Connects to the explicitly configured `DATABASE_URL`; does not automatically migrate, seed, or fall back to another mode. | Deployed PostgreSQL / Supabase. |
+| `ARCHIVE_DATA_MODE` | Behavior                                                                                                                          | Intended use                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `local` (default)   | Persists PostgreSQL data in local PGlite; applies versioned migrations and imports the initial collection once on first creation. | Local development and complete submission/review demonstrations.    |
+| `fixture`           | Reads only the cited static initial collection; rejects submissions and all other community writes.                               | Read-only demonstrations and deterministic public-interface checks. |
+| `database`          | Connects to the explicitly configured `DATABASE_URL`; does not automatically migrate, seed, or fall back to another mode.         | Deployed PostgreSQL / Supabase.                                     |
 
 Connection failures, missing migrations, and incomplete public references produce errors rather than silently serving samples. Requests in `database` mode do not depend on the project directory or local database files. Connections require the standard Node runtime, not the Edge runtime.
 
@@ -43,12 +43,12 @@ Connection strings, storage secrets, and authentication secrets must not use `NE
 
 Migrations run in filename order inside transactions and save a checksum for each file. Never edit an applied migration; add a new file for subsequent changes:
 
-| Migration | Contents |
-| --- | --- |
-| `0001_archive.sql` | Initial public people, places, relationships, materials, sources, and predecessor identity mappings. |
+| Migration            | Contents                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_archive.sql`   | Initial public people, places, relationships, materials, sources, and predecessor identity mappings.                                            |
 | `0002_community.sql` | Public credit/contribution projections; private submissions, photos, supplements, reviews, publication revisions, mail events, and rate limits. |
-| `0003_auth.sql` | Optional Better Auth accounts, sessions, verification codes, and separate reviewer grants. |
-| `0004_contacts.sql` | Separate private contact table; migrates names/emails from existing submissions and removes those two fields from original-content JSON. |
+| `0003_auth.sql`      | Optional Better Auth accounts, sessions, verification codes, and separate reviewer grants.                                                      |
+| `0004_contacts.sql`  | Separate private contact table; migrates names/emails from existing submissions and removes those two fields from original-content JSON.        |
 
 ## Public and private records
 
@@ -56,17 +56,17 @@ The `archive` schema contains public projections: people, places, relationships,
 
 The `community` schema stores the submission workflow:
 
-| Table | Purpose |
-| --- | --- |
-| `submissions` | Original content, status, account ownership, receipt hash, timestamps, and public contribution ID. |
-| `contacts` | Private name and contact email, linked by submission ID. |
-| `photos` | Private original/processed object keys, original captions, creator, rights, and dimensions. |
-| `supplements` | Additional information appended by the contributor. |
-| `reviews` | Decisions, contributor messages, public notes, and internal notes. |
+| Table                   | Purpose                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `submissions`           | Original content, status, account ownership, receipt hash, timestamps, and public contribution ID.                    |
+| `contacts`              | Private name and contact email, linked by submission ID.                                                              |
+| `photos`                | Private original/processed object keys, original captions, creator, rights, and dimensions.                           |
+| `supplements`           | Additional information appended by the contributor.                                                                   |
+| `reviews`               | Decisions, contributor messages, public notes, and internal notes.                                                    |
 | `publication_revisions` | Before/after versions of public entities changed by publication, with increasing sequence numbers for rollback order. |
-| `mail_events` | Delivery outcomes for receipts and review notifications. |
-| `rate_limits` | Atomic counters and expiry times, with hashed limit keys. |
-| `reviewers` | Reviewer authorization independent of ordinary account sign-in. |
+| `mail_events`           | Legacy table from the removed email feature; no longer written.                                                       |
+| `rate_limits`           | Atomic counters and expiry times, with hashed limit keys.                                                             |
+| `reviewers`             | Reviewer authorization independent of ordinary account sign-in.                                                       |
 
 Only after verifying an account, receipt, or reviewer privilege does the server merge `contacts` into the record needed by the contributor/reviewer interface. Contributors cannot see internal notes or reviewer account IDs. An ordinary account's submission list queries only its owned records; staff use a separate review-list interface.
 
@@ -74,7 +74,9 @@ Original authors, narrators, holding institutions, and providers are stored sepa
 
 ## Submissions, receipts, and sign-in
 
-Sign-in can use configured Google OAuth or email codes, independently of guest submissions. Google requests only basic identity scopes. Existing accounts link only when local and Google emails match and both are verified; names and domains do not establish identity. The sign-in method never changes attribution choices, receipt requirements, or reviewer permissions. See [GOOGLE-AUTH.md](./GOOGLE-AUTH.md) for configuration and live-verification limits.
+Sign-in uses configured Google OAuth, independently of guest submissions; the archive sends no email. Google requests only basic identity scopes. Existing accounts link only when local and Google emails match and both are verified; names and domains do not establish identity. The sign-in method never changes attribution choices, receipt requirements, or reviewer permissions. See [GOOGLE-AUTH.md](./GOOGLE-AUTH.md) for configuration and live-verification limits.
+
+Submissions for an existing person are composed on that person's page: each in-page block is sent as its own submission with an advisory `placement` field (section, biography paragraph, proposed place name) that reviewers see but that changes no publication rule. Blocks sent together reuse one receipt token, so one private link opens all of them.
 
 Before creating a submission, the browser generates a high-entropy receipt token and request ID. The database stores only the token's SHA-256 hash. A repeated creation request returns an existing draft only when request ID, token, and content all match. The token authorizes only this submission and cannot list other guest contributions.
 
@@ -82,11 +84,11 @@ Draft content can be edited and photos removed. After final submission, the orig
 
 A guest who later signs in can claim a submission only by presenting the original receipt and a verified email matching its contact. Matching names, an entered email string, or an ordinary session alone cannot establish ownership. A submission already owned by another account cannot be reclaimed.
 
-The submission transaction finishes before email delivery is attempted. Atomic receipt-delivery claims prevent concurrent duplicate sends; failure does not undo persisted data. Review notifications append mail events rather than overwriting receipt status. If mail is accepted but the process exits before recording the outcome, status may remain `sending`. Operators must reconcile this case; there is no background delivery queue or automatic-retry guarantee yet.
+No receipt or notification email is sent. The private receipt link returned after final submission is the contributor's only copy, and the receipt page tells them so; review decisions are read there.
 
 ## Review and publication
 
-Reviewers must be granted server-side access through `community.reviewers`. First sign in on the website with an email code or a Google account with a verified email, then stop the local development server and run from the root:
+Reviewers must be granted server-side access through `community.reviewers`. First sign in on the website with a Google account with a verified email, then stop the local development server and run from the root:
 
 ```powershell
 pnpm reviewer:grant --email reviewer@example.org --confirm

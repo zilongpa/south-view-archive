@@ -10,6 +10,7 @@ import {
   ImagePlus,
   LoaderCircle,
   LockKeyhole,
+  Plus,
   Sprout,
   Trash2,
 } from 'lucide-react';
@@ -26,8 +27,10 @@ import {
 import { CommunityNotice } from './community-shell';
 import { StoryContextFields } from './story-context-fields';
 import { RecordPicker } from './record-picker';
+import { LocationPicker } from './location-picker';
 import type { RecordOption } from '@/lib/record-options';
 import { restoreDraftEventDate } from '@/lib/story-context';
+import { copy } from '@/lib/copy';
 import {
   communityRequest,
   uploadCommunityPhoto,
@@ -46,6 +49,47 @@ type PhotoDraft = {
   metadata: Omit<PhotoMetadata, 'permission'> & { permission: boolean };
   uploadedId?: string;
 };
+type DraftLink = { title: string; url: string };
+function restoreLinks(value: unknown): DraftLink[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (item): item is DraftLink =>
+        !!item &&
+        typeof item === 'object' &&
+        typeof (item as DraftLink).title === 'string' &&
+        typeof (item as DraftLink).url === 'string',
+    )
+    .slice(0, 10);
+}
+/** Which provenance fields make sense for each kind of story. */
+type SourceKind = 'memory' | 'account' | 'document';
+/** One plain question instead of a drawer of provenance fields; testers skipped the drawer. */
+const sourceKinds: { value: SourceKind; title: string; text: string }[] = [
+  {
+    value: 'memory',
+    title: 'My own memory, or our family’s',
+    text: 'You knew this person, or the story was passed down to you.',
+  },
+  {
+    value: 'account',
+    title: 'Someone else told me',
+    text: 'A relative, neighbour, or church member remembered it.',
+  },
+  {
+    value: 'document',
+    title: 'A document, article, or record',
+    text: 'An obituary, newspaper, programme, letter, or an archive’s catalogue.',
+  },
+];
+function restorePoint(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [lng, lat] = value;
+  if (typeof lng !== 'number' || typeof lat !== 'number') return null;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lng) > 180 || Math.abs(lat) > 85)
+    return null;
+  return [lng, lat];
+}
 type Draft = {
   kind: SubmissionInput['kind'];
   personId: string;
@@ -53,7 +97,7 @@ type Draft = {
   title: string;
   body: string;
   context: string;
-  links: string;
+  links: DraftLink[];
   anonymous: boolean;
   displayName: string;
   clientRequestId: string;
@@ -65,6 +109,10 @@ type Draft = {
   relatedPersonIds: string[];
   placeIds: string[];
   eventDate: EventDate;
+  /** A place the contributor named or marked on the map for this person. */
+  placeName: string;
+  placeScope: 'cemetery' | 'atlanta';
+  placeCoordinates: [number, number] | null;
 };
 const draftKey = 'south-view-contribution-draft-v1';
 const kinds: { value: SubmissionInput['kind']; title: string; text: string }[] = [
@@ -93,20 +141,23 @@ const kinds: { value: SubmissionInput['kind']; title: string; text: string }[] =
 export function ContributionForm({
   people,
   places,
+  relations = [],
   initialPersonId,
 }: {
   people: PersonOption[];
   places: PersonOption[];
+  /** Person-place links, so the form can offer the chosen person's known places. */
+  relations?: { personId: string; placeId: string }[];
   initialPersonId?: string;
 }) {
   const [draft, setDraft] = useState<Draft>({
-    kind: 'memory',
+    kind: 'new-person',
     personId: initialPersonId ?? '',
     proposedPersonName: '',
     title: '',
     body: '',
     context: '',
-    links: '',
+    links: [],
     anonymous: false,
     displayName: '',
     clientRequestId: '',
@@ -118,16 +169,36 @@ export function ContributionForm({
     relatedPersonIds: [],
     placeIds: [],
     eventDate: { kind: 'unknown' },
+    placeName: '',
+    placeScope: 'cemetery',
+    placeCoordinates: null,
   });
+  const [sourceKind, setSourceKind] = useState<SourceKind>('memory');
+  const [newPlace, setNewPlace] = useState(false);
+  // What kind of contribution this is follows from the answers, not from a chooser.
+  const effectiveKind: SubmissionInput['kind'] = !draft.personId
+    ? 'new-person'
+    : sourceKind === 'document'
+      ? 'addition'
+      : 'memory';
+  const knownPlaces = draft.personId
+    ? places.filter((place) =>
+        relations.some((link) => link.personId === draft.personId && link.placeId === place.id),
+      )
+    : [];
   const [privateName, setPrivateName] = useState('');
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState(false);
   const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [phase, setPhase] = useState<'write' | 'preview' | 'sending'>('write');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [storageReady, setStorageReady] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [earlierReceipt, setEarlierReceipt] = useState('');
+  // Once a story is sent, the debounced draft save must not write it back for the next visit.
+  const finished = useRef(false);
   const [session, setSession] = useState<CommunitySession | null>(null);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
@@ -188,8 +259,32 @@ export function ContributionForm({
         receiptToken,
       );
       if (result.submission.status !== 'draft') {
+        // The earlier story was already sent: start fresh instead of bouncing to its receipt.
+        finished.current = true;
         sessionStorage.removeItem(draftKey);
-        window.location.assign(submissionReceiptUrl(id, receiptToken));
+        setEarlierReceipt(submissionReceiptUrl(id, receiptToken));
+        setRestored(false);
+        setDraft((previous) => ({
+          ...previous,
+          title: '',
+          body: '',
+          context: '',
+          proposedPersonName: '',
+          links: [],
+          sourceCreator: '',
+          narrator: '',
+          holdingInstitution: '',
+          savedSubmissionId: '',
+          relatedPersonIds: [],
+          placeIds: [],
+          eventDate: { kind: 'unknown' },
+          placeName: '',
+          placeScope: 'cemetery',
+          placeCoordinates: null,
+          clientRequestId: crypto.randomUUID(),
+          receiptToken: crypto.randomUUID() + crypto.randomUUID(),
+        }));
+        finished.current = false;
         return;
       }
       await restoreSavedPhotos(result.submission, receiptToken);
@@ -218,13 +313,16 @@ export function ContributionForm({
             'title',
             'body',
             'context',
-            'links',
             'displayName',
             'sourceCreator',
             'narrator',
             'holdingInstitution',
             'savedSubmissionId',
           ] as const;
+          // A person named in the URL wins over the saved draft's person: the reader arrived
+          // from that person's page, and the picker must agree with the address bar. The
+          // draft's places belong to its own person, so they are dropped when the person changes.
+          const samePerson = !initialPersonId || candidate.personId === initialPersonId;
           setDraft((previous) => ({
             ...previous,
             ...Object.fromEntries(
@@ -232,11 +330,16 @@ export function ContributionForm({
                 .filter((key) => typeof candidate[key] === 'string')
                 .map((key) => [key, candidate[key]]),
             ),
-            kind: kinds.some((kind) => kind.value === candidate.kind) ? candidate.kind! : 'memory',
+            ...(samePerson ? {} : { personId: initialPersonId }),
+            kind: 'new-person',
             anonymous: candidate.anonymous === true,
+            links: restoreLinks(candidate.links),
             relatedPersonIds: linkedRecordIdsSchema.catch([]).parse(candidate.relatedPersonIds),
-            placeIds: linkedRecordIdsSchema.catch([]).parse(candidate.placeIds),
+            placeIds: samePerson ? linkedRecordIdsSchema.catch([]).parse(candidate.placeIds) : [],
             eventDate: restoreDraftEventDate(candidate.eventDate),
+            placeName: typeof candidate.placeName === 'string' ? candidate.placeName : '',
+            placeScope: candidate.placeScope === 'atlanta' ? 'atlanta' : 'cemetery',
+            placeCoordinates: restorePoint(candidate.placeCoordinates),
             clientRequestId:
               typeof candidate.clientRequestId === 'string'
                 ? candidate.clientRequestId
@@ -247,6 +350,14 @@ export function ContributionForm({
                 : crypto.randomUUID() + crypto.randomUUID(),
           }));
           setRestored(true);
+          if (
+            (typeof candidate.sourceCreator === 'string' && candidate.sourceCreator.trim()) ||
+            (typeof candidate.holdingInstitution === 'string' &&
+              candidate.holdingInstitution.trim())
+          )
+            setSourceKind('document');
+          else if (typeof candidate.narrator === 'string' && candidate.narrator.trim())
+            setSourceKind('account');
           if (candidate.savedSubmissionId && candidate.receiptToken)
             void recoverSavedDraft(candidate.savedSubmissionId, candidate.receiptToken);
         }
@@ -274,8 +385,9 @@ export function ContributionForm({
   }, []);
 
   useEffect(() => {
-    if (!storageReady) return;
+    if (!storageReady || finished.current) return;
     const timer = setTimeout(() => {
+      if (finished.current) return;
       try {
         sessionStorage.setItem(draftKey, JSON.stringify(draft));
         setDraftSaved(true);
@@ -292,26 +404,37 @@ export function ContributionForm({
   function change<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((previous) => ({ ...previous, [key]: value }));
     setDraftSaved(false);
+    if (fieldErrors[key]) setFieldErrors(({ [key]: _cleared, ...rest }) => rest);
   }
+  const fieldClass = (name: string) => `community-field${fieldErrors[name] ? ' has-error' : ''}`;
+  const FieldError = ({ name }: { name: string }) =>
+    fieldErrors[name] ? (
+      <small className="community-field-error" role="alert">
+        {fieldErrors[name]}
+      </small>
+    ) : null;
   function inputValue(): SubmissionInput {
     return {
       ...draft,
-      personId: draft.kind === 'new-person' || !draft.personId ? null : draft.personId,
-      proposedPersonName:
-        draft.kind === 'new-person' || !draft.personId ? draft.proposedPersonName : '',
+      kind: effectiveKind,
+      personId: draft.personId || null,
+      proposedPersonName: draft.personId ? '' : draft.proposedPersonName,
       privateName,
       email: email.trim(),
       permission: true,
       links: draft.links
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const separator = line.indexOf('|');
-          return separator < 0
-            ? { title: line, url: line }
-            : { title: line.slice(0, separator).trim(), url: line.slice(separator + 1).trim() };
-        }),
+        .map((link) => ({ title: link.title.trim() || link.url.trim(), url: link.url.trim() }))
+        .filter((link) => link.url),
+      placement:
+        draft.placeName.trim() || draft.placeCoordinates
+          ? {
+              section: 'places',
+              ...(draft.placeName.trim() ? { proposedPlaceName: draft.placeName.trim() } : {}),
+              ...(draft.placeCoordinates
+                ? { proposedCoordinates: draft.placeCoordinates, proposedScope: draft.placeScope }
+                : {}),
+            }
+          : undefined,
     };
   }
   function validate() {
@@ -321,9 +444,16 @@ export function ContributionForm({
     }
     const result = submissionInputSchema.safeParse(inputValue());
     if (!result.success) {
-      setError(result.error.issues.map((issue) => issue.message).join(' '));
+      const errors: Record<string, string> = {};
+      for (const issue of result.error.issues) {
+        const key = String(issue.path[0] ?? 'form');
+        errors[key] ??= issue.message;
+      }
+      setFieldErrors(errors);
+      setError('Please check the highlighted fields below.');
       return null;
     }
+    setFieldErrors({});
     for (const photo of photos) {
       const checked = photoMetadataSchema.safeParse(photo.metadata);
       if (!checked.success) {
@@ -451,6 +581,7 @@ export function ContributionForm({
         draft.receiptToken,
       );
       if (saved.submission.status !== 'draft') {
+        finished.current = true;
         try {
           sessionStorage.removeItem(draftKey);
         } catch {
@@ -491,12 +622,13 @@ export function ContributionForm({
           ),
         );
       }
-      setProgress('Submitting for review…');
+      setProgress('Sending for review…');
       await communityRequest(
         `/submissions/${encodeURIComponent(created.id)}/submit`,
         { method: 'POST' },
         draft.receiptToken,
       );
+      finished.current = true;
       try {
         sessionStorage.removeItem(draftKey);
       } catch {
@@ -513,14 +645,11 @@ export function ContributionForm({
     }
   }
 
-  const personName =
-    draft.kind === 'new-person' || !draft.personId
-      ? draft.proposedPersonName
-      : (people.find((person) => person.id === draft.personId)?.name ?? draft.proposedPersonName);
+  const personName = !draft.personId
+    ? draft.proposedPersonName
+    : (people.find((person) => person.id === draft.personId)?.name ?? draft.proposedPersonName);
   const signInNext = safeCommunityNext(
-    draft.kind !== 'new-person' && draft.personId
-      ? `/contribute?person=${encodeURIComponent(draft.personId)}`
-      : '/contribute',
+    draft.personId ? `/contribute?person=${encodeURIComponent(draft.personId)}` : '/contribute',
   );
   return (
     <div className="community-grid">
@@ -536,6 +665,12 @@ export function ContributionForm({
           <CommunityNotice title="This archive is in read-only mode">
             You can prepare your story here, but submissions are not available until contribution
             storage is configured.
+          </CommunityNotice>
+        )}
+        {earlierReceipt && (
+          <CommunityNotice title="Your earlier story was already sent">
+            This form is now empty for a new story.{' '}
+            <Link href={earlierReceipt}>Open the private receipt of the earlier one</Link>.
           </CommunityNotice>
         )}
         {restored && phase === 'write' && (
@@ -574,66 +709,66 @@ export function ContributionForm({
           </CommunityNotice>
         )}
         {phase === 'write' ? (
-          <form className="community-form" onSubmit={preview}>
+          <form className="community-form" onSubmit={preview} noValidate>
+            <p className="community-legend">{copy.requiredLegend}</p>
             <section className="community-section">
               <div className="community-section-heading">
                 <span className="community-step">01</span>
-                <h2>What would you like to share?</h2>
-              </div>
-              <div className="community-choice-grid">
-                {kinds.map((kind) => (
-                  <label className="community-choice" key={kind.value}>
-                    <input
-                      type="radio"
-                      name="contribution-kind"
-                      value={kind.value}
-                      checked={draft.kind === kind.value}
-                      onChange={() => change('kind', kind.value)}
-                    />
-                    <span>
-                      <strong>{kind.title}</strong>
-                      <small>{kind.text}</small>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </section>
-            <section className="community-section">
-              <div className="community-section-heading">
-                <span className="community-step">02</span>
-                <h2>A person. A story. A connection.</h2>
+                <h2>Who are you adding, and what do you know?</h2>
               </div>
               <div className="community-fields">
-                {draft.kind !== 'new-person' && (
-                  <RecordPicker
-                    label="Who is this about?"
-                    options={people}
-                    value={draft.personId ? [draft.personId] : []}
-                    onChange={(ids) => change('personId', ids[0] ?? '')}
-                    placeholder="Search names or alternate names…"
-                    emptyLabel="Someone not listed here"
-                  />
-                )}
-                {(draft.kind === 'new-person' || !draft.personId) && (
-                  <label className="community-field">
+                <RecordPicker
+                  label="Who is this about?"
+                  options={people}
+                  value={draft.personId ? [draft.personId] : []}
+                  onChange={(ids) => {
+                    const personId = ids[0] ?? '';
+                    change('personId', personId);
+                    change('placeIds', []);
+                    // Keep the address bar honest so a reload or a shared link opens the same person.
+                    window.history.replaceState(
+                      null,
+                      '',
+                      personId
+                        ? `/contribute?person=${encodeURIComponent(personId)}`
+                        : '/contribute',
+                    );
+                  }}
+                  placeholder="Search names or alternate names…"
+                  emptyLabel="Someone not listed here"
+                />
+                {draft.personId ? (
+                  <p className="community-hint community-person-hint">
+                    Everything you add here is reviewed and then shown on {personName}’s page. You
+                    can also{' '}
+                    <Link href={`/people/${encodeURIComponent(draft.personId)}?edit=1`}>
+                      add it right on their page
+                    </Link>
+                    , next to the paragraph or place it belongs to.
+                  </p>
+                ) : (
+                  <label className={fieldClass('proposedPersonName')}>
                     <span>
-                      Person’s name <span className="community-required">*</span>
+                      Their name, if they are not in the archive yet{' '}
+                      <span className="community-required">*</span>
                     </span>
                     <input
                       value={draft.proposedPersonName}
                       onChange={(event) => change('proposedPersonName', event.target.value)}
                       required
                       maxLength={160}
+                      placeholder="e.g. Mary Johnson"
                     />
+                    <FieldError name="proposedPersonName" />
                     <small>
                       Use the name you know. Reviewers can help with name variations and
                       identification.
                     </small>
                   </label>
                 )}
-                <label className="community-field">
+                <label className={fieldClass('title')}>
                   <span>
-                    Give your contribution a title <span className="community-required">*</span>
+                    Title <span className="community-required">*</span>
                   </span>
                   <input
                     value={draft.title}
@@ -641,14 +776,13 @@ export function ContributionForm({
                     required
                     minLength={3}
                     maxLength={160}
-                    placeholder="A few words to introduce your story"
+                    placeholder="e.g. Sunday visits to the family plot"
                   />
+                  <FieldError name="title" />
                 </label>
-                <label className="community-field">
+                <label className={fieldClass('body')}>
                   <span>
-                    {draft.kind === 'correction'
-                      ? 'What needs correcting, and what should it say?'
-                      : 'Your story or contribution'}{' '}
+                    {effectiveKind === 'memory' ? 'Your memory' : 'Your story or contribution'}{' '}
                     <span className="community-required">*</span>
                   </span>
                   <textarea
@@ -660,217 +794,408 @@ export function ContributionForm({
                     rows={9}
                     placeholder="Tell it in your own words. What do you remember, or what would you like others to know?"
                   />
+                  <FieldError name="body" />
                   <small>
-                    {draft.body.length.toLocaleString()} / 20,000 characters. Personal recollections
-                    are welcome as recollections.
+                    {draft.body.length.toLocaleString()} / 20,000 characters. A memory can be
+                    personal; it does not need to be proven.
                   </small>
                 </label>
                 <label className="community-field">
-                  <span>How do you know this story?</span>
+                  <span>
+                    How do you know this story? <span className="community-hint">(optional)</span>
+                  </span>
                   <textarea
                     value={draft.context}
                     onChange={(event) => change('context', event.target.value)}
                     maxLength={4000}
                     rows={3}
-                    placeholder="Your connection to this person, how you learned this, or where the material came from."
+                    placeholder="e.g. She was my great-aunt; my mother told me this at family reunions."
                   />
                   <small>
                     This context helps readers understand the perspective behind the contribution.
                     It may be shown publicly.
                   </small>
                 </label>
-                <details className="story-context-details">
-                  <summary>
-                    Connect this story to people, places, and a time{' '}
-                    <span className="community-hint">(optional)</span>
-                  </summary>
-                  <StoryContextFields
-                    people={people}
-                    places={places}
-                    primaryPersonId={draft.kind === 'new-person' ? '' : draft.personId}
-                    value={draft}
-                    onChange={(context) => {
-                      setDraft((previous) => ({ ...previous, ...context }));
-                      setDraftSaved(false);
-                    }}
-                  />
-                </details>
-                <div className="community-two-columns">
-                  <label className="community-field">
-                    <span>Original author or creator (if different)</span>
-                    <input
-                      value={draft.sourceCreator}
-                      onChange={(event) => change('sourceCreator', event.target.value)}
-                      maxLength={200}
-                    />
-                    <small>Who originally wrote, created, or recorded this material?</small>
-                  </label>
-                  <label className="community-field">
-                    <span>Narrator or person remembering</span>
-                    <input
-                      value={draft.narrator}
-                      onChange={(event) => change('narrator', event.target.value)}
-                      maxLength={200}
-                    />
-                    <small>For an account told by somebody other than you.</small>
-                  </label>
-                </div>
-                <label className="community-field">
-                  <span>Holding institution or collection</span>
-                  <input
-                    value={draft.holdingInstitution}
-                    onChange={(event) => change('holdingInstitution', event.target.value)}
-                    maxLength={200}
-                    placeholder="Library, archive, or family collection, if applicable"
-                  />
-                </label>
-                <label className="community-field">
+                <fieldset className="community-fieldset source-kind">
+                  <legend>How do you know this?</legend>
+                  <div className="source-kind-options">
+                    {sourceKinds.map((option) => (
+                      <label className="source-kind-option" key={option.value}>
+                        <input
+                          type="radio"
+                          name="source-kind"
+                          value={option.value}
+                          checked={sourceKind === option.value}
+                          onChange={() => setSourceKind(option.value)}
+                        />
+                        <span>
+                          <strong>{option.title}</strong>
+                          <small>{option.text}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="community-fields" style={{ margin: '16px 0' }}>
+                    {sourceKind === 'memory' && (
+                      <p className="community-section-note">
+                        A memory needs no document. Say who you are to this person in the box above,
+                        so readers understand the perspective.
+                      </p>
+                    )}
+                    {sourceKind === 'document' && (
+                      <label className="community-field">
+                        <span>
+                          Original author or creator{' '}
+                          <span className="community-hint">(optional)</span>
+                        </span>
+                        <input
+                          value={draft.sourceCreator}
+                          onChange={(event) => change('sourceCreator', event.target.value)}
+                          maxLength={200}
+                          placeholder="e.g. Atlanta Daily World, 1952"
+                        />
+                        <small>Who originally wrote, created, or recorded this material?</small>
+                      </label>
+                    )}
+                    {sourceKind === 'account' && (
+                      <label className="community-field">
+                        <span>
+                          Who told you? <span className="community-hint">(optional)</span>
+                        </span>
+                        <input
+                          value={draft.narrator}
+                          onChange={(event) => change('narrator', event.target.value)}
+                          maxLength={200}
+                          placeholder="e.g. My grandmother, Ruth Hill"
+                        />
+                        <small>Only if the account was told by somebody other than you.</small>
+                      </label>
+                    )}
+                    {sourceKind === 'document' && (
+                      <label className="community-field">
+                        <span>
+                          Where the material is kept{' '}
+                          <span className="community-hint">(optional)</span>
+                        </span>
+                        <input
+                          value={draft.holdingInstitution}
+                          onChange={(event) => change('holdingInstitution', event.target.value)}
+                          maxLength={200}
+                          placeholder="e.g. Auburn Avenue Research Library, or a family album"
+                        />
+                      </label>
+                    )}
+                    {sourceKind !== 'memory' && (
+                      <div className={fieldClass('links')}>
+                        <span>
+                          Links to sources <span className="community-hint">(optional)</span>
+                        </span>
+                        {draft.links.map((link, index) => (
+                          <div className="community-link-row" key={index}>
+                            <input
+                              aria-label={`Link ${index + 1} title`}
+                              value={link.title}
+                              maxLength={200}
+                              placeholder="What is it? e.g. Obituary, 1968"
+                              onChange={(event) =>
+                                change(
+                                  'links',
+                                  draft.links.map((item, i) =>
+                                    i === index ? { ...item, title: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <input
+                              aria-label={`Link ${index + 1} address`}
+                              type="url"
+                              inputMode="url"
+                              value={link.url}
+                              placeholder="https://"
+                              onChange={(event) =>
+                                change(
+                                  'links',
+                                  draft.links.map((item, i) =>
+                                    i === index ? { ...item, url: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <button
+                              className="community-text-button"
+                              type="button"
+                              aria-label={`Remove link ${index + 1}`}
+                              onClick={() =>
+                                change(
+                                  'links',
+                                  draft.links.filter((_, i) => i !== index),
+                                )
+                              }
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                        <FieldError name="links" />
+                        {draft.links.length < 10 && (
+                          <button
+                            className="community-text-button"
+                            type="button"
+                            onClick={() =>
+                              change('links', [...draft.links, { title: '', url: '' }])
+                            }
+                          >
+                            <Plus size={15} aria-hidden="true" /> Add a link
+                          </button>
+                        )}
+                        <small>
+                          A web page, catalogue record, or article that supports this story.
+                        </small>
+                      </div>
+                    )}
+                  </div>
+                </fieldset>
+                <div className="community-field">
                   <span>
-                    Related sources or links <span className="community-hint">(optional)</span>
+                    {knownPlaces.length
+                      ? 'Is this about one of their places?'
+                      : 'Where are they buried, or a place from their life'}{' '}
+                    <span className="community-hint">(optional)</span>
                   </span>
-                  <textarea
-                    value={draft.links}
-                    onChange={(event) => change('links', event.target.value)}
-                    rows={3}
-                    placeholder={
-                      'Collection or document title | https://example.org/record\nOne source per line'
-                    }
-                  />
-                  <small>
-                    Up to 10 links. A memory does not need a written source to be submitted as a
-                    memory.
-                  </small>
-                </label>
+                  {knownPlaces.length > 0 && (
+                    <div className="community-place-choices">
+                      {knownPlaces.map((place) => (
+                        <label className="community-check" key={place.id}>
+                          <input
+                            type="checkbox"
+                            checked={draft.placeIds.includes(place.id)}
+                            onChange={(event) =>
+                              change(
+                                'placeIds',
+                                event.target.checked
+                                  ? [...draft.placeIds, place.id]
+                                  : draft.placeIds.filter((id) => id !== place.id),
+                              )
+                            }
+                          />
+                          <span>
+                            {place.name}
+                            <small>
+                              {place.scope === 'cemetery' ? 'South-View Cemetery' : 'Atlanta'}
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                      <label className="community-check">
+                        <input
+                          type="checkbox"
+                          checked={newPlace}
+                          onChange={(event) => {
+                            setNewPlace(event.target.checked);
+                            if (!event.target.checked) {
+                              change('placeName', '');
+                              change('placeCoordinates', null);
+                            }
+                          }}
+                        />
+                        <span>A place not listed here</span>
+                      </label>
+                    </div>
+                  )}
+                  {(!knownPlaces.length || newPlace) && (
+                    <>
+                      <input
+                        value={draft.placeName}
+                        onChange={(event) => change('placeName', event.target.value)}
+                        maxLength={160}
+                        placeholder="e.g. Section C, South-View Cemetery, or Wheat Street Baptist Church"
+                        aria-label="Place name"
+                      />
+                      <LocationPicker
+                        value={
+                          draft.placeCoordinates
+                            ? { coordinates: draft.placeCoordinates, scope: draft.placeScope }
+                            : null
+                        }
+                        onChange={(picked) => {
+                          change('placeCoordinates', picked?.coordinates ?? null);
+                          if (picked) change('placeScope', picked.scope);
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
             </section>
-            <section className="community-section">
-              <div className="community-section-heading">
-                <span className="community-step">03</span>
-                <h2>Photographs, with their story</h2>
-              </div>
-              <p className="community-section-note">
-                Optional. Up to five JPEG, PNG, or WebP images, no more than 10 MB each.
-              </p>
-              <div className="community-upload">
-                <ImagePlus size={30} strokeWidth={1.3} />
-                <strong>A face, a place, a moment remembered.</strong>
-                <p className="community-hint">
-                  Include only photographs you have permission to share.
-                </p>
-                <input
-                  aria-label="Choose photographs"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  onChange={(event) => {
-                    addPhotos(event.target.files);
-                    event.target.value = '';
+            <details className="story-context-details community-more">
+              <summary>
+                Add more{' '}
+                <span className="community-hint">
+                  (optional: photographs, other people, when it happened)
+                </span>
+              </summary>
+              <div className="community-fields" style={{ margin: '16px 0 0' }}>
+                <StoryContextFields
+                  people={people}
+                  places={places}
+                  primaryPersonId={draft.personId}
+                  value={draft}
+                  showPlaces={false}
+                  onChange={(context) => {
+                    setDraft((previous) => ({ ...previous, ...context }));
+                    setDraftSaved(false);
                   }}
-                  disabled={photos.length >= 5 || recovering || recoveryBlocked}
                 />
               </div>
-              <div className="community-photo-list">
-                {photos.map((photo, index) => (
-                  <div className="community-photo" key={photo.preview}>
-                    <img src={photo.preview} alt={`Your selected photograph ${index + 1}`} />
-                    <div className="community-photo-meta">
-                      <strong>{photo.name}</strong>
-                      {photo.uploadedId && (
-                        <p className="community-hint">
-                          Saved to your private draft. Remove and add it again to change its caption
-                          or permissions.
-                        </p>
-                      )}
-                      <label className="community-field">
-                        <span>Caption *</span>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          value={photo.metadata.caption}
-                          onChange={(event) => updatePhoto(index, { caption: event.target.value })}
-                          required
-                          maxLength={500}
-                        />
-                      </label>
-                      <label className="community-field">
-                        <span>Photographer or creator *</span>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          value={photo.metadata.creator}
-                          onChange={(event) => updatePhoto(index, { creator: event.target.value })}
-                          required
-                          maxLength={160}
-                          placeholder="Name, family collection, or unknown"
-                        />
-                      </label>
-                      <label className="community-field">
-                        <span>Rights and permission *</span>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          value={photo.metadata.rights}
-                          onChange={(event) => updatePhoto(index, { rights: event.target.value })}
-                          required
-                          maxLength={1000}
-                          placeholder="Who owns it, and how may it be used?"
-                        />
-                      </label>
-                      <label className="community-check" style={{ marginTop: 14 }}>
-                        <input
-                          disabled={Boolean(photo.uploadedId)}
-                          type="checkbox"
-                          checked={photo.metadata.permission}
-                          onChange={(event) =>
-                            updatePhoto(index, { permission: event.target.checked })
-                          }
-                          required
-                        />
-                        <span>I have permission for South-View to display this photograph.</span>
-                      </label>
-                      <button
-                        className="community-text-button"
-                        type="button"
-                        disabled={photoBusy}
-                        onClick={() => removePhoto(index)}
-                      >
-                        <Trash2 size={14} aria-hidden="true" /> Remove photograph
-                      </button>
+              <section className="community-section">
+                <div className="community-section-heading">
+                  <h2>
+                    Photographs <span className="community-hint">(optional)</span>
+                  </h2>
+                </div>
+                <p className="community-section-note">
+                  Up to five JPEG, PNG, or WebP images, no more than 10 MB each. A portrait is
+                  welcome. Each photograph needs a caption, a creator, and your permission.
+                </p>
+                <div className="community-upload">
+                  <ImagePlus size={30} strokeWidth={1.3} />
+                  <strong>A face, a place, a moment remembered.</strong>
+                  <p className="community-hint">
+                    Include only photographs you have permission to share.
+                  </p>
+                  <input
+                    aria-label="Choose photographs"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    onChange={(event) => {
+                      addPhotos(event.target.files);
+                      event.target.value = '';
+                    }}
+                    disabled={photos.length >= 5 || recovering || recoveryBlocked}
+                  />
+                </div>
+                <div className="community-photo-list">
+                  {photos.map((photo, index) => (
+                    <div className="community-photo" key={photo.preview}>
+                      <img src={photo.preview} alt={`Your selected photograph ${index + 1}`} />
+                      <div className="community-photo-meta">
+                        <strong>{photo.name}</strong>
+                        {photo.uploadedId && (
+                          <p className="community-hint">
+                            Saved to your private draft. Remove and add it again to change its
+                            caption or permissions.
+                          </p>
+                        )}
+                        <label className="community-field">
+                          <span>Caption *</span>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            value={photo.metadata.caption}
+                            onChange={(event) =>
+                              updatePhoto(index, { caption: event.target.value })
+                            }
+                            required
+                            maxLength={500}
+                            placeholder="e.g. The Hill family at the South-View gate, about 1960"
+                          />
+                        </label>
+                        <label className="community-field">
+                          <span>Photographer or creator *</span>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            value={photo.metadata.creator}
+                            onChange={(event) =>
+                              updatePhoto(index, { creator: event.target.value })
+                            }
+                            required
+                            maxLength={160}
+                            placeholder="e.g. Ruth Hill, or “family collection”, or “unknown”"
+                          />
+                        </label>
+                        <label className="community-field">
+                          <span>Rights and permission *</span>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            value={photo.metadata.rights}
+                            onChange={(event) => updatePhoto(index, { rights: event.target.value })}
+                            required
+                            maxLength={1000}
+                            placeholder="e.g. Owned by our family; South-View may display it online"
+                          />
+                        </label>
+                        <label className="community-check" style={{ marginTop: 14 }}>
+                          <input
+                            disabled={Boolean(photo.uploadedId)}
+                            type="checkbox"
+                            checked={photo.metadata.permission}
+                            onChange={(event) =>
+                              updatePhoto(index, { permission: event.target.checked })
+                            }
+                            required
+                          />
+                          <span>I have permission for South-View to display this photograph.</span>
+                        </label>
+                        <button
+                          className="community-text-button"
+                          type="button"
+                          disabled={photoBusy}
+                          onClick={() => removePhoto(index)}
+                        >
+                          <Trash2 size={14} aria-hidden="true" /> Remove photograph
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+            </details>
             <section className="community-section">
               <div className="community-section-heading">
-                <span className="community-step">04</span>
-                <h2>How should we credit you?</h2>
+                <span className="community-step">02</span>
+                <h2>Your name and your public credit</h2>
               </div>
               <div className="community-fields">
                 <div className="community-two-columns">
-                  <label className="community-field">
+                  <label className={fieldClass('privateName')}>
                     <span>
                       Your name <span className="community-required">*</span>
                     </span>
                     <input
                       value={privateName}
-                      onChange={(event) => setPrivateName(event.target.value)}
+                      onChange={(event) => {
+                        setPrivateName(event.target.value);
+                        if (fieldErrors.privateName)
+                          setFieldErrors(({ privateName: _c, ...rest }) => rest);
+                      }}
+                      placeholder="e.g. Ruth Hill"
                       required
                       minLength={2}
                       maxLength={160}
                       autoComplete="name"
                     />
+                    <FieldError name="privateName" />
                     <small>Private. Used by the review team.</small>
                   </label>
-                  <label className="community-field">
+                  <label className={fieldClass('email')}>
                     <span>
                       Email address <span className="community-required">*</span>
                     </span>
                     <input
                       type="email"
                       value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        if (fieldErrors.email) setFieldErrors(({ email: _c, ...rest }) => rest);
+                      }}
+                      placeholder="e.g. ruth@example.org"
                       required
                       autoComplete="email"
                     />
-                    <small>Private. For your receipt and review updates.</small>
+                    <FieldError name="email" />
+                    <small>
+                      Private. Reviewers may use it to reach you; the archive itself sends no email.
+                    </small>
                   </label>
                 </div>
                 <label className="community-check">
@@ -885,7 +1210,7 @@ export function ContributionForm({
                   </span>
                 </label>
                 {!draft.anonymous && (
-                  <label className="community-field">
+                  <label className={fieldClass('displayName')}>
                     <span>
                       Public display name <span className="community-required">*</span>
                     </span>
@@ -894,8 +1219,9 @@ export function ContributionForm({
                       onChange={(event) => change('displayName', event.target.value)}
                       required
                       maxLength={160}
-                      placeholder="The name readers will see"
+                      placeholder="e.g. The Hill family, or R. Hill"
                     />
+                    <FieldError name="displayName" />
                     <small>Only this name appears in the public contributor credit.</small>
                   </label>
                 )}
@@ -903,7 +1229,7 @@ export function ContributionForm({
             </section>
             <div className="community-actions">
               <button className="community-primary" type="submit">
-                Review my contribution <ArrowRight size={17} />
+                {copy.reviewStory} <ArrowRight size={17} />
               </button>
               <span className="community-draft">
                 {draftSaved && <Check size={14} />}
@@ -925,7 +1251,7 @@ export function ContributionForm({
             </div>
             <div className="community-review-line">
               <strong>Contribution type</strong>
-              {kinds.find((kind) => kind.value === draft.kind)?.title}
+              {kinds.find((kind) => kind.value === effectiveKind)?.title}
             </div>
             <p className="community-body">{draft.body}</p>
             <div className="community-review-line">
@@ -938,8 +1264,7 @@ export function ContributionForm({
                 {people
                   .filter(
                     (person) =>
-                      draft.relatedPersonIds.includes(person.id) &&
-                      (draft.kind === 'new-person' || person.id !== draft.personId),
+                      draft.relatedPersonIds.includes(person.id) && person.id !== draft.personId,
                   )
                   .map((person) => person.name)
                   .join('; ')}
@@ -954,16 +1279,36 @@ export function ContributionForm({
                   .join('; ')}
               </div>
             )}
+            {(draft.placeName.trim() || draft.placeCoordinates) && (
+              <div className="community-review-line">
+                <strong>Place</strong>
+                {[
+                  draft.placeName.trim(),
+                  draft.placeCoordinates
+                    ? `pin at ${draft.placeCoordinates[1].toFixed(5)}, ${draft.placeCoordinates[0].toFixed(5)} (${draft.placeScope === 'cemetery' ? 'South-View Cemetery' : 'Atlanta'})`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </div>
+            )}
+            <div className="community-review-line">
+              <strong>How you know this</strong>
+              {sourceKinds.find((option) => option.value === sourceKind)?.title}
+            </div>
             {draft.context && (
               <div className="community-review-line">
                 <strong>Context</strong>
                 {draft.context}
               </div>
             )}
-            {draft.links && (
+            {draft.links.some((link) => link.url.trim()) && (
               <div className="community-review-line">
-                <strong>Related sources</strong>
-                {draft.links}
+                <strong>Links to sources</strong>
+                {draft.links
+                  .filter((link) => link.url.trim())
+                  .map((link) => link.title.trim() || link.url.trim())
+                  .join('; ')}
               </div>
             )}
             {draft.sourceCreator && (
@@ -1012,6 +1357,7 @@ export function ContributionForm({
               <strong>Private contact</strong>
               {privateName} · {email}
             </div>
+            <CommunityNotice title="No email will be sent">{copy.noEmail}</CommunityNotice>
             <label className="community-check" style={{ marginTop: 25 }}>
               <input
                 type="checkbox"
@@ -1044,11 +1390,11 @@ export function ContributionForm({
                 {phase === 'sending' ? (
                   <>
                     <LoaderCircle size={17} className="community-spinner" />{' '}
-                    {progress || 'Sending your contribution…'}
+                    {progress || copy.sending}
                   </>
                 ) : (
                   <>
-                    Send for review <ArrowRight size={17} />
+                    {copy.sendStory} <ArrowRight size={17} />
                   </>
                 )}
               </button>
@@ -1077,8 +1423,9 @@ export function ContributionForm({
           </p>
           <ol>
             <li>Share what you know, in your own words.</li>
-            <li>Reviewers may ask for more context.</li>
-            <li>Approved contributions join the archive with clear credit.</li>
+            <li>Save the private link shown after sending; it is your only receipt.</li>
+            <li>Reviewers may ask for more context on that page.</li>
+            <li>Approved stories join the archive with clear credit.</li>
           </ol>
         </div>
         <div className="community-aside-card">

@@ -2,13 +2,13 @@
 
 A public archive application designed to grow into a production service, connecting people with South-View Cemetery and places across Atlanta. Built from a focused **create-t3-turbo** starter: Next.js App Router, TypeScript, pnpm/Turbo, tRPC, Drizzle/PostgreSQL, and MapLibre GL JS.
 
-The application includes a map and people list, search and filters, cemetery/city views, cited person pages, links to oral histories and documents, community submissions, optional Google/email-code sign-in, private receipts, staff review, attributed publication, and withdrawal. The initial archive contains **3 people and 6 places**. Submissions are not published automatically. Personal memories retain their own attribution and do not automatically become biographical facts. Staff can run optional GPT-6 Luna review with web research after configuring the server OpenAI key. Recording and audio-file uploads are not supported. AI findings remain advisory; only staff can publish.
+The application includes a map and people list, search and filters, cemetery/city views, cited person pages, links to oral histories and documents, community submissions, optional Google sign-in, private receipts, staff review, attributed publication, and withdrawal. **The archive sends no email**: contributors keep the private receipt link shown after sending, and review decisions appear on that page. The initial archive contains **3 people and 6 places**. Submissions are not published automatically. Personal memories retain their own attribution and do not automatically become biographical facts. Staff can run optional GPT-6 Luna review with web research after configuring the server OpenAI key. Recording and audio-file uploads are not supported. AI findings remain advisory; only staff can publish.
 
 `/explore` uses a full-window map for immediate browsing. A single-line search bar and People entry sit at the upper left; separate South-View/Atlanta mode buttons have been removed. Selecting a pin opens a side panel, or a bottom panel on mobile. South-View has a translucent area highlight and outline, with zoom controls and a single labeled return button at the lower right. Zooming out to city scale automatically shows Atlanta locations **alongside all cemetery locations**; zooming back near the cemetery focuses that area again. Automatic changes preserve the camera, filters, and selected person. The detail panel can still locate a person's associated places. The OpenStreetMap outline is a reference area, not a surveyed property boundary. Pin tips anchor to coordinates, and filters, selection, and camera state remain in the URL. Facts, sources, and item-level attribution remain available in the details.
 
-**`/stories`** searches full biographies, community stories, archival materials, and approved photo captions. It supports type, theme, person, and place filters; relevance/date sorting; pagination; and reviewers' selections. Each result retains its own provider credit. Photos can be enlarged and navigated with previous/next controls or the keyboard, with creator, provider, permission, and source information always available. Filters and pagination are stored in the URL, allowing readers to return to their results from archive, photo, and credit links.
+Map, person, about, submission, sign-in, and management pages share `SiteNavigation`: the same logo, wordmark, 64px header, and three destinations (Explore, Share a story, My contributions). Published community stories appear on person pages and their own permanent pages; there is no separate Stories section. The 2026-10-28 usability update also added a required-field legend, example placeholders, inline validation, distinct grave and related-place markers with a legend, and a higher-contrast palette.
 
-Map, person, stories, about, submission, sign-in, and management pages share `SiteNavigation`: the same logo, wordmark, 64px header, navigation order, and active-section indicator. The mobile menu supports keyboard use, Escape, and outside-click dismissal. Map search sits below the header; person-page contribution links retain the selected person, and embedded pages provide standalone-window entry points.
+**Contributions are made on the person's own page.** Pressing _Edit this page_ (or arriving with `?edit=1`) shows + buttons after each biography paragraph, under the places list, and in the community section, plus a photograph slot when no portrait exists. Each addition is written in place, previewed as an _awaiting review_ block, and sent as an ordinary submission carrying an advisory `placement` (section, paragraph, proposed place name) that the review desk displays. Several additions sent together share one private receipt link. `/contribute` now only introduces a person who is not in the archive yet and otherwise redirects visitors to the right person page. The mobile menu supports keyboard use, Escape, and outside-click dismissal. Map search sits below the header; person-page contribution links retain the selected person, and embedded pages provide standalone-window entry points.
 
 Submission and review forms support additional related people, existing places mentioned in the material, and known, approximate, ranged, or unknown event dates. One contribution can appear on multiple person pages without duplicate uploads or overwriting biographies. Event dates are separate from publication dates. Only reviewers can add a story to Editor's selections when publishing; selection does not turn a community memory into a verified fact. The initial collection contains no invented community stories.
 
@@ -26,7 +26,7 @@ On macOS or Linux, use `cp .env.example apps/nextjs/.env.local` instead of `Copy
 
 Open [http://127.0.0.1:3000/explore](http://127.0.0.1:3000/explore). The default `ARCHIVE_DATA_MODE=local` creates a persistent PGlite database under **`.southview/`** at the repository root, applies migrations, and imports the initial collection once. Restarting does not erase submissions or overwrite records. No external database account or map API key is required; the OpenFreeMap basemap needs an internet connection.
 
-In development, `MAIL_MODE=local` **does not send email**. Verification codes, receipts, and review notifications are written as private JSON files in `.southview/outbox/`. Read codes from those files during development; there is no public inbox endpoint. Photos and the development authentication secret also live under `.southview/`. This directory is ignored by Git and must never be moved into `public/` or served as static files. `SOUTHVIEW_DATA_DIR` changes the shared private-data root.
+No email is sent in any mode. Guest contributors receive their private receipt link on screen after sending; account holders sign in with Google. Photos and the development authentication secret live under `.southview/`. This directory is ignored by Git and must never be moved into `public/` or served as static files. `SOUTHVIEW_DATA_DIR` changes the shared private-data root.
 
 Common commands:
 
@@ -37,7 +37,7 @@ pnpm build
 pnpm start
 ```
 
-`pnpm check` runs type checks, tests, and a production build in sequence. Tests use isolated databases, temporary files, and mocked external requests; they do not connect to a live cloud database or send email. `pnpm start` requires a build and runs in production mode: the development outbox is disabled even with a local database. Sign-in then requires an HTTPS origin, an explicit authentication secret, and valid Google OAuth configuration or SMTP for email codes. Use `pnpm dev` for the full local email-code and submission demo. The server listens on `127.0.0.1` by default; containers and hosting platforms should use their required host and port.
+`pnpm check` runs type checks, tests, and a production build in sequence. Tests use isolated databases, temporary files, and mocked external requests; they do not connect to a live cloud database or send email. `pnpm start` requires a build and runs in production mode: the development outbox is disabled even with a local database. Sign-in then requires an HTTPS origin, an explicit authentication secret, and valid Google OAuth configuration. Use `pnpm dev` for the local guest-submission demo. The server listens on `127.0.0.1` by default; containers and hosting platforms should use their required host and port.
 
 MapLibre 6 requires a worker and shared module from the same version. `dev` and `build` automatically run `apps/nextjs/scripts/prepare-map.mjs`, copying the installed worker, matching shared module, and license to `apps/nextjs/public/vendor/maplibre/`. Do not download or commit those generated files separately. Use the project scripts rather than bypassing preparation with a direct `next build`. Deployments must include the generated files and serve them under `/vendor/maplibre/`; `start` uses the assets prepared during the build.
 
@@ -47,18 +47,17 @@ If a Node version manager reports a missing version, first make sure `node --ver
 
 `.env.example` documents configuration; it is not loaded automatically.
 
-| Use | Local configuration | Loading behavior |
-| --- | --- | --- |
-| `pnpm dev`, Next builds, and the running web application | `apps/nextjs/.env.local` | Next runs from `apps/nextjs` and does not automatically read the root `.env`. |
-| Migrations, seeding, `pnpm reviewer:grant`, and `pnpm storage:check` | Root `.env.local` or `.env` | Root `.env.local` is loaded before root `.env`; existing process variables take precedence. These scripts do not read the web application's environment file. |
-| Deployment | Hosting platform environment settings | Keep server secrets out of browser variables and Git. |
+| Use                                                                  | Local configuration                   | Loading behavior                                                                                                                                              |
+| -------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`, Next builds, and the running web application             | `apps/nextjs/.env.local`              | Next runs from `apps/nextjs` and does not automatically read the root `.env`.                                                                                 |
+| Migrations, seeding, `pnpm reviewer:grant`, and `pnpm storage:check` | Root `.env.local` or `.env`           | Root `.env.local` is loaded before root `.env`; existing process variables take precedence. These scripts do not read the web application's environment file. |
+| Deployment                                                           | Hosting platform environment settings | Keep server secrets out of browser variables and Git.                                                                                                         |
 
 ```dotenv
 # apps/nextjs/.env.local
 ARCHIVE_DATA_MODE=local
 NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000
 BETTER_AUTH_URL=http://127.0.0.1:3000
-MAIL_MODE=local
 PHOTO_STORAGE=local
 NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/positron
 NEXT_PUBLIC_MAP_FONT=Noto Sans Regular
@@ -76,13 +75,13 @@ NEXT_PUBLIC_MAP_FONT=Noto Sans Regular
 
 Create a dedicated **Google Cloud Web application OAuth client**, then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `apps/nextjs/.env.local` or server-side deployment settings. Register `http://127.0.0.1:3000/api/auth/callback/google` for local development. The production callback is the actual HTTPS `BETTER_AUTH_URL` followed by `/api/auth/callback/google`. The browser origin must match the authentication origin; do not mix `localhost` and `127.0.0.1`.
 
-Availability is determined independently for each sign-in method. Google does not require SMTP; email codes can use the development outbox or real SMTP. Guest submissions remain available. Google requests only `openid email profile` with online access. Existing accounts are linked only when both email addresses match and both are verified. Sign-in does not automatically claim guest submissions or grant reviewer access.
+Google is the only account sign-in; without it, guest submissions with private receipts remain fully available. Google requests only `openid email profile` with online access. Existing accounts are linked only when both email addresses match and both are verified. Sign-in does not automatically claim guest submissions or grant reviewer access.
 
 **The recorded deployment has not configured a real Google OAuth client or completed live Google authorization/callback verification.** Implementation and mocked tests do not substitute for cloud acceptance testing. See [Google sign-in setup](docs/GOOGLE-AUTH.md) for console steps, the basic-sign-in Testing exception, and publication requirements. Do not share credentials in chat or commit them.
 
 ## Granting reviewer access
 
-First sign in on the website using an email code or a Google account with a verified email, then **stop the local development server**. Configure the root `.env.local` with the same `ARCHIVE_DATA_MODE` and optional `SOUTHVIEW_DATA_DIR` as the website, then run:
+First sign in on the website with a Google account with a verified email, then **stop the local development server**. Configure the root `.env.local` with the same `ARCHIVE_DATA_MODE` and optional `SOUTHVIEW_DATA_DIR` as the website, then run:
 
 ```powershell
 pnpm reviewer:grant --email reviewer@example.org --confirm
@@ -91,7 +90,7 @@ pnpm dev
 
 The review page is `/admin/contributions`. Ordinary sign-in does not grant reviewer privileges; the CLI grants access only to verified accounts. Add `--revoke` to revoke access, or `--allow-production` when operating in production. Local PGlite permits only one process at a time: stop the server before database or reviewer CLI operations, then restart it. Do not share a PGlite directory across instances.
 
-## Supabase database, R2 photos, and authentication email
+## Supabase database and R2 photos
 
 Production deployments with multiple instances use `database` mode and private object storage while preserving the same data contracts and permanent person IDs. Local mode normally does not need separate migration or seed commands.
 
@@ -125,12 +124,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@POOLER_HOST:PORT/postgres
 NEXT_PUBLIC_SITE_URL=https://archive.example.org
 BETTER_AUTH_URL=https://archive.example.org
 BETTER_AUTH_SECRET=REPLACE_WITH_A_RANDOM_SECRET_OF_AT_LEAST_32_BYTES
-MAIL_MODE=smtp
-MAIL_FROM=archive@example.org
-SMTP_HOST=YOUR_SMTP_HOST
-SMTP_PORT=465
-SMTP_USER=YOUR_SMTP_USER
-SMTP_PASSWORD=YOUR_SMTP_PASSWORD
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_OAUTH_CLIENT_ID
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_OAUTH_CLIENT_SECRET
 PHOTO_STORAGE=s3
 S3_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 S3_REGION=auto
@@ -142,25 +137,25 @@ NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/positron
 NEXT_PUBLIC_MAP_FONT=Noto Sans Regular
 ```
 
-Replace every placeholder with valid configuration. `MAIL_FROM` is a single email address, and SMTP must support TLS. Production database mode requires private object storage and does not fall back to a local directory. Disable both the R2 `r2.dev` URL and public custom domains; the S3 API cannot verify these console settings. S3 mode uses direct uploads with five-minute signed URLs restricted to an object and file size, followed by server validation and processing. Authorized original-file downloads use one-minute URLs. Secret access keys remain server-side. Both originals and processed images are private; only approved, non-withdrawn processed images are available through the public application. Apply a one-day expiry only to temporary `staging/` objects, never to permanent archive files. Set `TRUST_PROXY=1` only when the reverse proxy replaces untrusted `X-Forwarded-For`; otherwise requests share a conservative rate-limit bucket.
+Replace every placeholder with valid configuration. Production database mode requires private object storage and does not fall back to a local directory. Disable both the R2 `r2.dev` URL and public custom domains; the S3 API cannot verify these console settings. S3 mode uses direct uploads with five-minute signed URLs restricted to an object and file size, followed by server validation and processing. Authorized original-file downloads use one-minute URLs. Secret access keys remain server-side. Both originals and processed images are private; only approved, non-withdrawn processed images are available through the public application. Apply a one-day expiry only to temporary `staging/` objects, never to permanent archive files. Set `TRUST_PROXY=1` only when the reverse proxy replaces untrusted `X-Forwarded-For`; otherwise requests share a conservative rate-limit bucket.
 
 With the same S3 settings in root `.env.local`, run `pnpm storage:check` to generate two tiny test images and verify writing, reading, and deletion, including cleanup. It does not open the database, publish a contribution, or verify public-access settings. When changing storage for existing photos, migrate originals and processed images with their keys preserved; environment changes do not copy files. Existing deployments can still explicitly choose `PHOTO_STORAGE=supabase`.
 
 The application uses server-side Next, Drizzle, and Better Auth, not Supabase Auth or the browser Data API. `archive` holds public projections; `community` holds private contacts, submissions, authentication, and reviews. Do not expose the private schema to anonymous clients. **The runtime needs business read/write privileges** for accounts, sessions, submissions, reviews, and public projections; a read-only connection is insufficient. Migration credentials also need DDL privileges. Verify actual role grants against migration RLS policies.
 
-Never prefix server secrets with `NEXT_PUBLIC_`. The authentication origin must match the standalone site. `sent` means SMTP accepted the message; `local` means it was stored only in the development outbox. Mail failures do not undo persisted submissions. Without HTTPS or an authentication secret, production sign-in is unavailable. Missing SMTP disables email codes and real delivery, but configured Google sign-in can still work. Production never enables the development outbox.
+Never prefix server secrets with `NEXT_PUBLIC_`. The authentication origin must match the standalone site. Without HTTPS, an authentication secret, and Google OAuth credentials, production account sign-in is unavailable while guest submissions continue to work.
 
 ## Structure and interfaces
 
-| Directory | Responsibility |
-| --- | --- |
-| `apps/nextjs` | Public pages, maps, submissions, sign-in, review, and HTTP entry points. |
-| `packages/validators` | Domain contracts and citation, submission, and review validation. |
-| `packages/api` | `archive.snapshot`, `search`, `person`, and `mapFeatures`, without authentication dependencies. |
-| `packages/db` | Data modes, persistence, migrations, private workflows, and public projections. |
-| `packages/services` | Better Auth, email, private photos, and the reviewer CLI. |
-| `packages/ui` | Reusable UI primitives. |
-| `tests` | Data, transaction, authentication, storage, and HTTP authorization tests. |
+| Directory             | Responsibility                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| `apps/nextjs`         | Public pages, maps, submissions, sign-in, review, and HTTP entry points.                        |
+| `packages/validators` | Domain contracts and citation, submission, and review validation.                               |
+| `packages/api`        | `archive.snapshot`, `search`, `person`, and `mapFeatures`, without authentication dependencies. |
+| `packages/db`         | Data modes, persistence, migrations, private workflows, and public projections.                 |
+| `packages/services`   | Better Auth (Google), private photos, upload tickets, AI vetting, and the reviewer CLI.         |
+| `packages/ui`         | Reusable UI primitives.                                                                         |
+| `tests`               | Data, transaction, authentication, storage, and HTTP authorization tests.                       |
 
 Next server code can call `createCaller({}).archive.snapshot()` directly. Public tRPC routes use `/api/trpc`, community routes use `/api/community`, and authentication uses `/api/auth`. The small public application filters a shared public snapshot for lists, maps, and person pages. GeoJSON coordinates always use **`[longitude, latitude]`**.
 
@@ -169,11 +164,13 @@ Main routes:
 - `/explore`: public map and accessible list.
 - `/explore?scope=atlanta`: combined Atlanta and South-View view.
 - `/people/john-lewis`: permanent, directly accessible, shareable person page.
+- `/places/atlanta-city-hall`: a place in its own right: what it is, its position and evidence, and everyone connected to it. Map markers select places; the panel lists the connected people and leads here with **Open the full page**. A person page links to it as **About this place** with `?person=`, so the place page puts that person's connection first and marks it, and its back link returns to them.
 - `/explore?embed=1`: simplified embedded view.
-- `/contribute`: memories, additions, corrections, and new-person proposals.
+- `/people/[id]?edit=1`: in-page additions, paragraph edits, edits to existing places (name, position, description), new places marked on a map, and photographs for an existing person.
+- `/contribute`: one short form for a memory, fact, or photograph about anyone, in the archive or not. `?person=` pre-selects a person; the navigation link passes it from person pages. Once a person is chosen the form offers their known places and hides the new-person fields.
 - `/submissions/[id]#receipt=…`: private receipt, original submission, status, and supplements.
-- `/sign-in`, `/my-contributions`: optional Google/email-code sign-in and owned submissions.
-- `/admin/contributions`: separately authorized staff review.
+- `/sign-in`, `/my-contributions`: optional Google sign-in and owned submissions.
+- `/admin/contributions`: separately authorized staff review. Signed-in reviewers also get a **Review desk** link in the navigation.
 - `/contributions/[id]`: published contribution, sources, and provider attribution.
 - `/about`: collection scope and reading guidance.
 
@@ -185,21 +182,21 @@ People, places, person-place relationships, materials, sources, editorial issues
 
 ## Staff review desk and AI vetting
 
-`/admin/contributions` provides a submission queue with title/person/ID search, status and content-type filters, real status counts, and a review workspace. Staff can compare the original, edit the public draft, inspect review history, request information, approve and publish, reject with a contributor-visible reason, or withdraw a published entry. Approval opens a public-content preview before the final publication action. Internal notes and private contact details remain staff-only. Selected records and filters survive refresh; unsaved edits receive a navigation prompt.
+`/admin/contributions` provides a submission queue with title/person/ID search, status and content-type filters, real status counts, and a review workspace. Staff can compare the original, edit the public draft, inspect review history, request information, approve and publish, reject with a contributor-visible reason, or withdraw a published entry. Approval opens a public-content preview before the final publication action. In-page edits arrive with their placement already applied: a paragraph edit shows the paragraph as it was beside the contributor's version and, published to the biography, replaces that paragraph in place; an addition lands after the paragraph it was written under; a place marked on the map arrives with its position filled in for confirmation. If the paragraph changed since the edit was written, publication to the biography is refused and the reviewer can keep the edit as a community entry instead. Internal notes and private contact details remain staff-only. Selected records and filters survive refresh; unsaved edits receive a navigation prompt.
 
 **Vet** uses GPT-6 Luna (`gpt-6-luna`), medium reasoning, and required web search through one awaited OpenAI Responses request. Reports contain individual claims, verdicts, explanations, evidence links, reviewer notes, follow-up questions, limitations, and attachment coverage. Personal memories are not treated as false just because online corroboration is unavailable. Reports are stored privately, survive restarts, and become stale when new original material is added. Duplicate starts are blocked and failed checks can be retried. Human review and publication work independently of Vet.
 
-Set the server-only `OPENAI_API_KEY` in `apps/nextjs/.env.local` or the hosting platform to enable checks. Without it, the desk explicitly shows **Not configured**. Migration `0005_vet.sql` adds the private run history, using the existing PGlite/Supabase data modes and local/S3/R2 photo storage. Public archive and contributor-receipt APIs do not return AI reports. See [AI vetting configuration, privacy, recovery, and acceptance](docs/AI-VETTING.md). The full local suite passed 119 tests, all six workspace type checks and a production build; real OpenAI calls are intentionally deferred until the key is configured.
+Set the server-only `OPENAI_API_KEY` in `apps/nextjs/.env.local` or the hosting platform to enable checks. Without it, the desk explicitly shows **Not configured**. Migration `0005_vet.sql` adds the private run history, using the existing PGlite/Supabase data modes and local/S3/R2 photo storage. Places carry an optional public description (`summary`, with citations) that reviewers edit in the map place panel and contributors can propose from a person page; `pnpm db:backfill-places` fills the fixture descriptions into a database seeded before the field existed and drops the old "· South-View" suffix from seeded grave names (stop a local dev server first). Public archive and contributor-receipt APIs do not return AI reports. See [AI vetting configuration, privacy, recovery, and acceptance](docs/AI-VETTING.md). The full local suite passed 119 tests, all six workspace type checks and a production build; real OpenAI calls are intentionally deferred until the key is configured.
 
 ## Deployment and maintenance
 
-[South-View Archive](https://south-view-archive.vercel.app/explore) was deployed from local source on 2026-10-07 using Supabase and R2. Guest submissions, photos, and private receipts were verified online. The recorded deployment still needs real sign-in configuration for Google/email accounts and staff web review. See [Vercel deployment](docs/VERCEL.md) for resources, settings, and redeployment instructions.
+[South-View Archive](https://south-view-archive.vercel.app/explore) was deployed from local source on 2026-10-07 using Supabase and R2. Guest submissions, photos, and private receipts were verified online. The recorded deployment still needs real Google sign-in configuration for staff web review. See [Vercel deployment](docs/VERCEL.md) for resources, settings, and redeployment instructions.
 
 A source snapshot was published to the private [GitHub repository](https://github.com/zilongpa/south-view-archive) on 2026-10-19. This does not connect GitHub to Vercel or redeploy the site. Local credentials, runtime data, uploads, and validation screenshots are excluded. The completed review desk and Luna/web-search integration were deployed on the same date, with migration `0005_vet.sql` applied and public routes verified. Live staff sign-in and model checks still require the authentication and OpenAI configuration described in [the release record](docs/VERCEL.md).
 
 Deploy to a standard Next.js Node environment with monorepo support. Install from the root workspace and lockfile, use `apps/nextjs` as the application directory, build with `pnpm build`, and run with `pnpm start` or the hosting adapter. This is not a static export or a Sites-specific project: HTML or `public/` alone is insufficient because authentication, database, and media endpoints need a server. The application does not automatically publish or provision cloud resources.
 
-Before public operation, confirm text, coordinate precision, media conditions, domain, and the complete website iframe chain with South-View. Complete user accessibility trials, backup/restore exercises, mail/storage monitoring, and a contact-retention policy. Email has no durable background retry queue yet; operators must handle failed or interrupted deliveries. Live Google OAuth, SMTP, staff publication, and complete website embedding still need verification.
+Before public operation, confirm text, coordinate precision, media conditions, domain, and the complete website iframe chain with South-View. Complete user accessibility trials, backup/restore exercises, storage monitoring, and a contact-retention policy. Because no email is sent, reviewers who request information should expect contributors to reply only when they revisit their receipt page. Live Google OAuth, staff publication, and complete website embedding still need verification.
 
 As the collection grows, move search, pagination, and map-viewport queries closer to the database. Human review and original-submission retention remain the current workflow. AI assistance supports research and must not replace staff publication decisions; live model behavior still needs verification after configuration.
 
@@ -208,7 +205,7 @@ As the collection grows, move search, pagination, and map-viewport queries close
 - [Source register and editorial decisions](docs/SOURCES.md): biographical facts, coordinate methods, oral histories, rights, and open questions.
 - [Domain model and expansion rules](docs/DATA_MODEL.md): citations, relationships, identity matching, and coordinate precision.
 - [Community data and review](docs/COMMUNITY-DATA.md): private contacts, receipts, states, attributed publication, and withdrawal.
-- [Authentication, email, and photos](docs/COMMUNITY-SERVICES.md): email codes, reviewer grants, private storage, and runtime settings.
+- [Authentication and photos](docs/COMMUNITY-SERVICES.md): Google sign-in, reviewer grants, private storage, and runtime settings.
 - [AI vetting](docs/AI-VETTING.md): Luna/web search, private reports, model configuration, and validation limits.
 - [Google sign-in setup](docs/GOOGLE-AUTH.md): dedicated OAuth clients, callbacks, testing, and publication steps.
 - [Cloudflare R2 and S3 storage](docs/R2-STORAGE.md): private buckets, credentials, connection checks, providers, and photo migration.

@@ -16,6 +16,7 @@
     "migrate": "tsx script/migrate.ts",
     "seed": "tsx script/seed.ts",
     "db:migrate": "tsx script/migrate.ts",
+    "places:backfill": "tsx script/backfill-places.ts",
     "db:seed": "tsx script/seed.ts"
   },
   "dependencies": {

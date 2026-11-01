@@ -3,7 +3,6 @@ import { z, ZodError } from 'zod';
 import { dataMode } from '@southview/db/connection';
 import * as repository from '@southview/db/community';
 import { getSession, getSignInMethods, isReviewer } from '@southview/services/auth';
-import { getMailMode, sendMail } from '@southview/services/mail';
 import { savePhoto, InvalidPhotoError } from '@southview/services/photos';
 import { getStorage, MAX_PHOTO_BYTES } from '@southview/services/storage';
 import { createUploadTicket, verifyUploadTicket } from '@southview/services/upload-ticket';
@@ -142,25 +141,15 @@ async function handle(request: Request, context: Context): Promise<Response> {
     const mode = dataMode();
     if (method === 'GET' && path.join('/') === 'session') {
       if (mode === 'fixture')
-        return json({
-          user: null,
-          reviewer: false,
-          mode,
-          authAvailable: false,
-          signInMethods: { emailOtp: false, google: false },
-          mailMode: 'disabled',
-        });
+        return json({ user: null, reviewer: false, mode, signInMethods: { google: false } });
       const session = await getSession(request.headers);
-      const signInMethods = getSignInMethods();
       return json({
         user: session
           ? { id: session.user.id, name: session.user.name, email: session.user.email }
           : null,
         reviewer: session ? await isReviewer(session.user.id) : false,
         mode,
-        authAvailable: signInMethods.emailOtp,
-        signInMethods,
-        mailMode: getMailMode(),
+        signInMethods: getSignInMethods(),
       });
     }
     if (mode === 'fixture')
@@ -220,15 +209,8 @@ async function handle(request: Request, context: Context): Promise<Response> {
         });
       if (path.length === 2 && method === 'POST') {
         const review = reviewInputSchema.parse(await bodyJSON(request));
+        // Contributors are not notified: they read decisions on their private receipt page.
         const result = await repository.reviewSubmission(path[1]!, review, actor);
-        if (result.changed) {
-          const delivery = await sendMail({
-            to: result.submission.input.email,
-            subject: 'An update on your South-View contribution',
-            text: `Your contribution “${result.submission.input.title}” is now ${result.submission.status.replaceAll('-', ' ')}.\n${review.authorMessage}\nUse your original private receipt link to view the review or add information. If you have linked it to an account, open ${receiptURL(request, result.submission.id)}.`,
-          });
-          await repository.recordMailEvent(result.submission.id, `review-${delivery.status}`);
-        }
         return json({ ...result, submission: privateView(result.submission, actor) });
       }
     }
@@ -243,22 +225,11 @@ async function handle(request: Request, context: Context): Promise<Response> {
         });
       }
       if (path.length === 3 && path[2] === 'submit' && method === 'POST') {
+        // No receipt email exists: the private link returned here is the contributor's only copy.
         const submission = await repository.finalizeSubmission(id, actor);
-        let mailStatus = submission.mailStatus ?? 'disabled';
-        const receiptUrl = receiptURL(request, id, actor.receiptToken);
-        if (await repository.claimReceiptMail(id)) {
-          const delivery = await sendMail({
-            to: submission.input.email,
-            subject: 'Your South-View contribution receipt',
-            text: `Your contribution “${submission.input.title}” has been saved for review. Private return link: ${receiptUrl}\nKeep this link private. An account is optional.`,
-          });
-          mailStatus = delivery.status;
-          await repository.setMailStatus(id, mailStatus);
-        }
         return json({
-          submission: privateView({ ...submission, mailStatus }, actor),
-          mailStatus,
-          receiptUrl,
+          submission: privateView(submission, actor),
+          receiptUrl: receiptURL(request, id, actor.receiptToken),
         });
       }
       if (path.length === 3 && path[2] === 'supplements' && method === 'POST') {

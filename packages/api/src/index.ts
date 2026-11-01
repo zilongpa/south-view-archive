@@ -4,8 +4,6 @@ import { getArchive } from '@southview/db';
 import {
   searchArchive,
   searchSchema,
-  discoverArchive,
-  discoveryInputSchema,
   publicRelatedPersonIds,
   type ArchiveData,
   type Scope,
@@ -81,9 +79,6 @@ export function archiveSearch(data: ArchiveData, input: SearchInput) {
 const t = initTRPC.context<Record<string, never>>().create();
 const archiveRouter = t.router({
   snapshot: t.procedure.query(() => getArchive()),
-  discover: t.procedure
-    .input(discoveryInputSchema)
-    .query(async ({ input }) => discoverArchive(await getArchive(), input)),
   search: t.procedure
     .input(searchSchema)
     .query(async ({ input }) => archiveSearch(await getArchive(), input)),

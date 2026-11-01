@@ -288,7 +288,9 @@ export function RecordPicker({
           ? `${selected.length} selected${maxReached ? ' · Selection limit reached' : ''}`
           : selected.length
             ? '1 selected'
-            : 'Search the archive or choose a new person.'}
+            : emptyLabel
+              ? `Search the archive, or choose “${emptyLabel}”.`
+              : 'Search the archive.'}
         {open && ` · ${matches.length} matching ${matches.length === 1 ? 'record' : 'records'}`}
       </p>
     </div>

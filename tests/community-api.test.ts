@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve, sep } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -11,6 +11,7 @@ import { getStorage } from '@southview/services/storage';
 import { createUploadTicket } from '@southview/services/upload-ticket';
 import { submissionInputSchema, photoMetadataSchema } from '@southview/validators';
 import { GET, POST, PATCH } from '../apps/nextjs/src/app/api/community/[...path]/route';
+import { googleTestClient, mockGoogle } from './helpers/google';
 
 const sharp = createRequire(new URL('../packages/services/package.json', import.meta.url))('sharp');
 const origin = 'http://127.0.0.1:3000';
@@ -23,9 +24,8 @@ async function setup(t: TestContext) {
     NODE_ENV: 'test',
     ARCHIVE_DATA_MODE: 'local',
     SOUTHVIEW_DATA_DIR: directory,
-    MAIL_MODE: 'local',
-    GOOGLE_CLIENT_ID: '',
-    GOOGLE_CLIENT_SECRET: '',
+    GOOGLE_CLIENT_ID: googleTestClient.id,
+    GOOGLE_CLIENT_SECRET: googleTestClient.secret,
     PHOTO_STORAGE: 'local',
     BETTER_AUTH_URL: origin,
     NEXT_PUBLIC_SITE_URL: origin,
@@ -84,26 +84,22 @@ function draftInput(email = 'visitor@example.org') {
   });
 }
 
-test('session exposes independent sign-in methods without credentials and fixture disables both', async (t) => {
+test('session exposes Google availability without credentials and fixture mode disables it', async (t) => {
   await setup(t);
   let response = await call('session');
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
-  let session = await response.json();
-  assert.deepEqual(session.signInMethods, { emailOtp: true, google: false });
-  assert.equal(session.authAvailable, true);
-  process.env.MAIL_MODE = 'disabled';
-  process.env.GOOGLE_CLIENT_ID = 'south-view-test.apps.googleusercontent.com';
-  process.env.GOOGLE_CLIENT_SECRET = 'private-google-test-secret';
-  response = await call('session');
   const serialized = await response.text();
-  session = JSON.parse(serialized);
-  assert.deepEqual(session.signInMethods, { emailOtp: false, google: true });
-  assert.equal(session.authAvailable, false);
-  assert.equal(serialized.includes(process.env.GOOGLE_CLIENT_ID), false);
-  assert.equal(serialized.includes(process.env.GOOGLE_CLIENT_SECRET), false);
+  let session = JSON.parse(serialized);
+  assert.deepEqual(session.signInMethods, { google: true });
+  assert.equal(serialized.includes(googleTestClient.id), false);
+  assert.equal(serialized.includes(googleTestClient.secret), false);
+  process.env.GOOGLE_CLIENT_SECRET = '';
+  response = await call('session');
+  session = await response.json();
+  assert.deepEqual(session.signInMethods, { google: false });
   process.env.ARCHIVE_DATA_MODE = 'fixture';
   session = await (await call('session')).json();
-  assert.deepEqual(session.signInMethods, { emailOtp: false, google: false });
+  assert.deepEqual(session.signInMethods, { google: false });
   assert.equal(session.user, null);
 });
 async function draft(email = 'visitor@example.org') {
@@ -132,42 +128,15 @@ async function photoForm(
   );
   return form;
 }
-async function signIn(directory: string, email: string, address: string) {
+async function signIn(t: TestContext, email: string) {
   const auth = await getAuth();
-  const request = (path: string, body: unknown) =>
-    new Request(`${origin}/api/auth/${path}`, {
-      method: 'POST',
-      headers: { Origin: origin, 'Content-Type': 'application/json', 'x-forwarded-for': address },
-      body: JSON.stringify(body),
-    });
-  assert.equal(
-    (await auth.handler(request('email-otp/send-verification-otp', { email, type: 'sign-in' })))
-      .status,
-    200,
-  );
-  const letters = await Promise.all(
-    (await readdir(join(directory, 'outbox'))).map(async (filename) =>
-      JSON.parse(await readFile(join(directory, 'outbox', filename), 'utf8')),
-    ),
-  );
-  const letter = letters.find(
-    (letter) => letter.to === email && letter.subject === 'Your South-View sign-in code',
-  );
-  assert.ok(letter);
-  const otp = letter.text.match(/code is (\d{6})/)?.[1];
-  assert.ok(otp);
-  const response = await auth.handler(
-    request('sign-in/email-otp', { email, otp, name: 'Account Visitor', reviewer: true }),
-  );
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  return {
-    cookie: response.headers
-      .getSetCookie()
-      .map((value) => value.split(';')[0])
-      .join('; '),
-    userId: data.user.id as string,
-  };
+  const google = mockGoogle(t, origin);
+  const { cookie, userId } = await google.signIn(auth, {
+    sub: `google-${email}`,
+    email,
+    email_verified: true,
+  });
+  return { cookie, userId };
 }
 
 test('direct photo completion verifies receipt, ticket, metadata and image, then attaches only once', async (t) => {
@@ -338,15 +307,10 @@ test('community HTTP keeps draft text private and intact across invalid uploads 
   assert.equal(initial.status, 200);
   const submitted = await initial.json();
   assert.equal(submitted.submission.status, 'pending');
-  assert.equal(submitted.mailStatus, 'local');
+  assert.equal(submitted.mailStatus, undefined);
   assert.ok(submitted.receiptUrl.endsWith(`#receipt=${item.receipt}`));
   assert.equal(await getPublicContribution(item.id), null);
   assert.equal((await call(`submissions/${item.id}/submit`, 'POST', {}, receipt)).status, 200);
-  assert.equal(
-    (await store.query('SELECT id FROM community.mail_events WHERE submission_id=$1', [item.id]))
-      .rows.length,
-    1,
-  );
   assert.equal(
     (
       await call(
@@ -379,8 +343,8 @@ test('community HTTP keeps draft text private and intact across invalid uploads 
   assert.equal((await finalResponse.json()).submission.input.body, item.input.body);
 });
 
-test('community HTTP rejects production host spoofing and sends one receipt for concurrent finalization', async (t) => {
-  const { store, directory } = await setup(t);
+test('community HTTP rejects production host spoofing and concurrent finalization stays idempotent', async (t) => {
+  const { store } = await setup(t);
   const item = await draft();
   process.env.NODE_ENV = 'production';
   const spoofed = new Request('https://attacker.example/api/community/submissions', {
@@ -400,23 +364,18 @@ test('community HTTP rejects production host spoofing and sends one receipt for 
     [0, 1].map(() => call(`submissions/${item.id}/submit`, 'POST', {}, { receipt: item.receipt })),
   );
   assert.ok(results.every((result) => result.status === 200));
-  const events = await store.query('SELECT id FROM community.mail_events WHERE submission_id=$1', [
-    item.id,
-  ]);
-  assert.equal(events.rows.length, 1);
-  const receipts = await Promise.all(
-    (await readdir(join(directory, 'outbox'))).map(async (filename) =>
-      JSON.parse(await readFile(join(directory, 'outbox', filename), 'utf8')),
-    ),
+  const statuses = await store.query<{ status: string }>(
+    'SELECT status FROM community.submissions WHERE id=$1',
+    [item.id],
   );
-  assert.equal(
-    receipts.filter((letter) => letter.subject === 'Your South-View contribution receipt').length,
-    1,
+  assert.deepEqual(
+    statuses.rows.map((row) => row.status),
+    ['pending'],
   );
 });
 
 test('community HTTP verifies account claims and gates originals, review, publication, and withdrawal', async (t) => {
-  const { store, directory } = await setup(t);
+  const { store } = await setup(t);
   const item = await draft('owner@example.org');
   const image = await sharp({ create: { width: 4, height: 3, channels: 3, background: '#8c7654' } })
     .png()
@@ -439,8 +398,8 @@ test('community HTTP verifies account claims and gates originals, review, public
     ).status,
     200,
   );
-  const owner = await signIn(directory, 'owner@example.org', '192.0.2.20');
-  const other = await signIn(directory, 'other@example.org', '192.0.2.21');
+  const owner = await signIn(t, 'owner@example.org');
+  const other = await signIn(t, 'other@example.org');
   assert.equal((await call('review', 'GET', undefined, owner)).status, 403);
   assert.equal((await call('review/vet', 'GET', undefined, owner)).status, 403);
   assert.equal((await call(`review/${item.id}/vet`, 'POST', {}, owner)).status, 403);

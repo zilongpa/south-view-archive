@@ -22,8 +22,6 @@ import {
   getPublicPhoto,
   getPublicContribution,
   consumeRateLimit,
-  setMailStatus,
-  claimReceiptMail,
 } from '../packages/db/src/community';
 import {
   submissionInputSchema,
@@ -156,10 +154,6 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         await attachPhoto(created.submission.id, attached, author);
         await finalizeSubmission(created.submission.id, author);
         await finalizeSubmission(created.submission.id, author);
-        const receiptClaims = await Promise.all(
-          Array.from({ length: 5 }, () => claimReceiptMail(created.submission.id)),
-        );
-        assert.equal(receiptClaims.filter(Boolean).length, 1);
         await assert.rejects(updateDraft(created.submission.id, input, author), {
           code: 'CONFLICT',
         });
@@ -359,17 +353,6 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
           claimSubmission(submission.id, { ...owner, userId: 'other-account' }),
           { code: 'CONFLICT' },
         );
-        await setMailStatus(submission.id, 'failed');
-        await setMailStatus(submission.id, 'outbox');
-        assert.equal((await getSubmission(submission.id, owner)).mailStatus, 'outbox');
-        assert.equal(
-          (
-            await store.query('SELECT id FROM community.mail_events WHERE submission_id=$1', [
-              submission.id,
-            ])
-          ).rows.length,
-          2,
-        );
         const limits = await Promise.all(
           Array.from({ length: 12 }, () => consumeRateLimit('private-ip-and-email', 3, 60000)),
         );
@@ -400,6 +383,143 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         assert.deepEqual(
           (await getArchive()).people.find((person) => person.id === 'john-lewis'),
           before,
+        );
+      },
+    );
+    await t.test(
+      'an in-place paragraph edit replaces its paragraph on publication, and a stale edit is refused',
+      async () => {
+        const before = (await getArchive()).people.find((person) => person.id === 'john-lewis')!;
+        const target = before.biography[0]!;
+        const anchor = target.id ?? '0';
+        const rewritten =
+          'A rewritten first paragraph that keeps the facts but reads more clearly for visitors.';
+        const receipt = token();
+        const author = { ...guest, receiptToken: receipt };
+        const { submission } = await createDraft(
+          original({
+            kind: 'correction',
+            body: rewritten,
+            placement: { section: 'biography', blockId: anchor, originalText: target.text },
+          }),
+          guest,
+          receipt,
+        );
+        await finalizeSubmission(submission.id, author);
+        await reviewSubmission(submission.id, decision({ applyTo: 'biography' }), reviewer);
+        const after = (await getArchive()).people.find((person) => person.id === 'john-lewis')!;
+        assert.equal(after.biography.length, before.biography.length);
+        assert.equal(after.biography[0]!.text, rewritten);
+        assert.equal(after.biography[0]!.id, target.id ?? `contribution-${submission.id}`);
+        assert.ok(after.biography[0]!.creditIds.includes(`contributor-${submission.id}`));
+        assert.ok(after.biography[0]!.citations.length >= target.citations.length);
+        // A second edit written against the old text no longer matches anything.
+        const staleReceipt = token();
+        const staleAuthor = { ...guest, receiptToken: staleReceipt };
+        const stale = await createDraft(
+          original({
+            kind: 'correction',
+            body: 'Another rewrite of the same paragraph that must not land anywhere.',
+            placement: { section: 'biography', blockId: anchor, originalText: target.text },
+          }),
+          guest,
+          staleReceipt,
+        );
+        await finalizeSubmission(stale.submission.id, staleAuthor);
+        await assert.rejects(
+          reviewSubmission(stale.submission.id, decision({ applyTo: 'biography' }), reviewer),
+          { code: 'BAD_REQUEST' },
+        );
+        assert.equal((await getSubmission(stale.submission.id, staleAuthor)).status, 'pending');
+        await reviewSubmission(
+          stale.submission.id,
+          decision({
+            action: 'reject',
+            authorMessage: 'The paragraph changed since you wrote this.',
+          }),
+          reviewer,
+        );
+        await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
+        assert.deepEqual(
+          (await getArchive()).people.find((person) => person.id === 'john-lewis'),
+          before,
+        );
+      },
+    );
+    await t.test(
+      'an in-page place edit updates the existing relationship instead of adding a second one',
+      async () => {
+        const before = await getArchive();
+        const relation = before.relations.find((item) => item.personId === 'john-lewis')!;
+        const place = before.places.find((item) => item.id === relation.placeId)!;
+        const receipt = token();
+        const author = { ...guest, receiptToken: receipt };
+        const { submission } = await createDraft(
+          original({
+            kind: 'correction',
+            placeIds: [place.id],
+            body: 'A corrected account of how this place figured in his life, written in place.',
+            placement: {
+              section: 'places',
+              blockId: relation.id,
+              originalText: relation.description,
+              proposedCoordinates: [-84.37, 33.702],
+              proposedScope: 'cemetery',
+              proposedPlaceSummary: 'A family plot near the chapel, according to the contributor.',
+            },
+          }),
+          guest,
+          receipt,
+        );
+        await finalizeSubmission(submission.id, author);
+        await reviewSubmission(
+          submission.id,
+          decision({
+            applyTo: 'place',
+            sourceIds: [before.sources[0]!.id],
+            placePatch: {
+              placeId: place.id,
+              name: place.name,
+              scope: 'cemetery',
+              coordinates: [-84.37, 33.702],
+              precision: 'reference',
+              locationNote: 'Moved by a contributor; reference position.',
+              relationship: relation.label,
+              summary: 'A family plot near the chapel, according to the contributor.',
+            },
+          }),
+          reviewer,
+        );
+        const after = await getArchive();
+        const relationsAfter = after.relations.filter(
+          (item) => item.personId === 'john-lewis' && item.placeId === place.id,
+        );
+        assert.equal(relationsAfter.length, 1);
+        assert.equal(relationsAfter[0]!.id, relation.id);
+        assert.ok(relationsAfter[0]!.description.startsWith('A corrected account'));
+        assert.ok(relationsAfter[0]!.creditIds.includes(`contributor-${submission.id}`));
+        assert.deepEqual(
+          after.places.find((item) => item.id === place.id)!.coordinates,
+          [-84.37, 33.702],
+        );
+        assert.equal(
+          after.places.find((item) => item.id === place.id)!.summary,
+          'A family plot near the chapel, according to the contributor.',
+        );
+        assert.ok(
+          after.places
+            .find((item) => item.id === place.id)!
+            .summaryCitations.some((citation) => citation.sourceId === before.sources[0]!.id),
+        );
+        await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
+        const restored = await getArchive();
+        assert.deepEqual(
+          restored.relations.find((item) => item.id === relation.id),
+          relation,
+        );
+        assert.deepEqual(
+          restored.places.find((item) => item.id === place.id),
+          place,
         );
       },
     );

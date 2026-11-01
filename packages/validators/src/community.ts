@@ -28,7 +28,29 @@ export const linkedRecordIdsSchema = z
   .array(z.string().trim().min(1).max(120))
   .max(50)
   .transform((ids) => [...new Set(ids)]);
-const webUrl = z.url().refine((value) => /^https?:\/\//i.test(value), 'Use an http or https link.');
+/** Where a contributor asked for an in-page addition to appear. Advisory for reviewers only. */
+export const placementSchema = z.object({
+  section: z.enum(['biography', 'places', 'community', 'portrait']),
+  /** Biography block id (or index) the addition follows or the correction concerns. */
+  blockId: z.string().trim().max(120).optional(),
+  /** The paragraph text the contributor edited, so reviewers can compare and publication can match it. */
+  originalText: z.string().trim().max(20000).optional(),
+  proposedPlaceName: z.string().trim().max(160).optional(),
+  /** A description of the place itself, offered alongside the person's connection to it. */
+  proposedPlaceSummary: z.string().trim().max(4000).optional(),
+  proposedScope: z.enum(['cemetery', 'atlanta']).optional(),
+  /** A point the contributor marked on the map, longitude first. Reviewers confirm before publishing. */
+  proposedCoordinates: z
+    .tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)])
+    .optional(),
+});
+export type Placement = z.infer<typeof placementSchema>;
+const webUrl = z
+  .url({ error: 'Use a full web address, starting with http:// or https://.' })
+  .refine(
+    (value) => /^https?:\/\//i.test(value),
+    'Use a full web address, starting with http:// or https://.',
+  );
 export const submissionInputSchema = z
   .object({
     clientRequestId: z.string().uuid(),
@@ -37,19 +59,22 @@ export const submissionInputSchema = z
     relatedPersonIds: linkedRecordIdsSchema.default([]),
     placeIds: linkedRecordIdsSchema.default([]),
     eventDate: eventDateSchema.default({ kind: 'unknown' }),
+    placement: placementSchema.optional(),
     proposedPersonName: z.string().trim().max(160).default(''),
-    title: z.string().trim().min(3).max(160),
-    body: z.string().trim().min(20).max(20000),
+    title: z.string().trim().min(3, 'Give your story a title of at least 3 characters.').max(160),
+    body: z.string().trim().min(20, 'Tell the story in at least 20 characters.').max(20000),
     context: z.string().trim().max(4000).default(''),
     sourceCreator: z.string().trim().max(200).default(''),
     narrator: z.string().trim().max(200).default(''),
     holdingInstitution: z.string().trim().max(200).default(''),
     links: z
-      .array(z.object({ title: z.string().trim().min(1).max(200), url: webUrl }))
-      .max(10)
+      .array(z.object({ title: z.string().trim().min(1, 'Name the link.').max(200), url: webUrl }))
+      .max(10, 'Add up to 10 links.')
       .default([]),
-    privateName: z.string().trim().min(2).max(160),
-    email: z.email().transform((value) => value.trim().toLowerCase()),
+    privateName: z.string().trim().min(2, 'Enter your name.').max(160),
+    email: z
+      .email({ error: 'Enter a valid email address.' })
+      .transform((value) => value.trim().toLowerCase()),
     anonymous: z.boolean(),
     displayName: z.string().trim().max(160).default(''),
     permission: z.literal(true),
@@ -160,6 +185,8 @@ export const reviewInputSchema = z
         precision: z.enum(['reference', 'address', 'verified', 'unmapped']),
         locationNote: z.string().min(1),
         relationship: z.string().min(1),
+        /** Public description of the place itself; omitted keeps the current one. */
+        summary: z.string().trim().max(4000).optional(),
       })
       .optional(),
   })
@@ -222,5 +249,4 @@ export type SubmissionRecord = {
     reviewerId?: string;
   }[];
   publishedEntryId: string | null;
-  mailStatus?: string;
 };

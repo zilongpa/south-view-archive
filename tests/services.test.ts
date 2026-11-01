@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve, sep } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createStore, projectRoot, setStoreForTests } from '@southview/db/connection';
 import { createAuth, getSession, isReviewer } from '@southview/services/auth';
 import { authBaseURL, authSecret } from '@southview/services/config';
-import { authAvailable, createMailer, getMailMode } from '@southview/services/mail';
 import { InvalidPhotoError, processPhoto, savePhoto } from '@southview/services/photos';
 import {
   createLocalStorage,
   createSupabaseStorage,
   MAX_PHOTO_BYTES,
 } from '@southview/services/storage';
+import { googleTestClient, mockGoogle } from './helpers/google';
 
 const requireService = createRequire(new URL('../packages/services/package.json', import.meta.url));
 const sharp = requireService('sharp');
@@ -41,75 +41,6 @@ test('local auth secret persists; production requires an explicit secret and HTT
   assert.throws(
     () => authBaseURL({ NODE_ENV: 'production', BETTER_AUTH_URL: 'http://example.org' }),
     /HTTPS/,
-  );
-});
-
-test('mail delivery distinguishes local outbox, SMTP acceptance, disabled, and failure', async (t) => {
-  const directory = await temporaryDirectory(t);
-  const message = {
-    to: 'visitor@example.org',
-    subject: 'Receipt',
-    text: 'Your contribution was saved.',
-  };
-  const local = createMailer({
-    NODE_ENV: 'test',
-    SOUTHVIEW_DATA_DIR: directory,
-    MAIL_MODE: 'local',
-  });
-  assert.deepEqual(await local(message), { status: 'local' });
-  const entries = await readdir(join(directory, 'outbox'));
-  assert.equal(entries.length, 1);
-  const saved = JSON.parse(await readFile(join(directory, 'outbox', entries[0]!), 'utf8'));
-  assert.equal(saved.delivery, 'local-only');
-  assert.equal(saved.to, message.to);
-  const productionLocal = {
-    NODE_ENV: 'production',
-    MAIL_MODE: 'local',
-    SOUTHVIEW_DATA_DIR: directory,
-  };
-  assert.equal(getMailMode(productionLocal), 'disabled');
-  assert.equal(authAvailable(productionLocal), false);
-  assert.equal((await createMailer(productionLocal)(message)).status, 'disabled');
-  assert.equal((await readdir(join(directory, 'outbox'))).length, 1);
-  const smtp = {
-    NODE_ENV: 'production',
-    MAIL_MODE: 'smtp',
-    SMTP_HOST: 'mail.example.org',
-    SMTP_USER: 'user',
-    SMTP_PASSWORD: 'private-test-value',
-    MAIL_FROM: 'archive@example.org',
-  };
-  assert.equal(
-    (
-      await createMailer(smtp, {
-        async sendMail() {
-          return { accepted: [message.to] };
-        },
-      })(message)
-    ).status,
-    'sent',
-  );
-  assert.equal(
-    (
-      await createMailer(smtp, {
-        async sendMail() {
-          return { rejected: [message.to] };
-        },
-      })(message)
-    ).status,
-    'failed',
-  );
-  assert.deepEqual(
-    await createMailer(smtp, {
-      async sendMail() {
-        throw new Error('private transport error');
-      },
-    })(message),
-    { status: 'failed', reason: 'transport-failed' },
-  );
-  assert.equal(
-    (await local({ ...message, subject: 'Receipt\r\nBcc: attacker@example.org' })).status,
-    'failed',
   );
 });
 
@@ -205,156 +136,45 @@ test('Supabase refuses a public bucket before any upload and authenticates priva
   assert.deepEqual((await privateBucket.read(key))!.bytes, Buffer.from([1, 2, 3]));
 });
 
-test('OTP authentication stores hashes, creates a durable session, rejects reuse, and never grants staff', async (t) => {
+test('a Google session is durable, never grants staff by itself, and ends on sign-out', async (t) => {
   const store = await createStore({ mode: 'local', path: 'memory://', seed: false });
-  t.after(() => store.close());
+  setStoreForTests(store);
+  t.after(async () => {
+    setStoreForTests(undefined);
+    await store.close();
+  });
+  const origin = 'http://localhost:3000';
   const environment = {
     NODE_ENV: 'test',
-    BETTER_AUTH_URL: 'http://localhost:3000',
+    BETTER_AUTH_URL: origin,
     BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-bytes-long',
+    GOOGLE_CLIENT_ID: googleTestClient.id,
+    GOOGLE_CLIENT_SECRET: googleTestClient.secret,
   };
-  let received = '';
-  const auth = await createAuth(store, environment, async (_email, otp) => {
-    received = otp;
+  const auth = await createAuth(store, environment);
+  const google = mockGoogle(t, origin);
+  const { cookie, userId } = await google.signIn(auth, {
+    sub: 'session-user',
+    email: 'visitor@example.org',
+    email_verified: true,
   });
-  const post = (path: string, body: unknown, cookie?: string) =>
-    auth.handler(
-      new Request(`http://localhost:3000/api/auth${path}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Origin: 'http://localhost:3000',
-          'x-forwarded-for': '192.0.2.10',
-          ...(cookie ? { cookie } : {}),
-        },
-        body: JSON.stringify(body),
-      }),
-    );
-  const email = 'visitor@example.org';
-  assert.equal(
-    (await post('/email-otp/send-verification-otp', { email, type: 'sign-in' })).status,
-    200,
-  );
-  assert.match(received, /^\d{6}$/);
-  const verification = await store.query<{ value: string }>(
-    'SELECT value FROM community.auth_verification',
-  );
-  assert.ok(verification.rows.length > 0);
-  assert.ok(verification.rows.every((row) => !row.value.includes(received)));
-  assert.ok((await post('/sign-in/email-otp', { email, otp: 'invalid' })).status >= 400);
-  const signedIn = await post('/sign-in/email-otp', {
-    email,
-    otp: received,
-    name: 'Visitor',
-    role: 'admin',
-  });
-  assert.equal(signedIn.status, 200);
-  const cookie = signedIn.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
   assert.match(cookie, /southview\.session_token=/);
-  const body = await signedIn.json();
-  assert.equal(body.user.emailVerified, true);
-  assert.equal(body.user.role, undefined);
-  const reopened = await createAuth(store, environment, async () => {});
+  const reopened = await createAuth(store, environment);
   const session = await reopened.api.getSession({ headers: new Headers({ cookie }) });
-  assert.equal(session?.user.email, email);
-  assert.ok((await post('/sign-in/email-otp', { email, otp: received })).status >= 400);
-  setStoreForTests(store);
-  t.after(() => setStoreForTests(undefined));
-  assert.equal(await isReviewer(body.user.id), false);
+  assert.equal(session?.user.email, 'visitor@example.org');
+  assert.equal(await isReviewer(userId), false);
   await store.query('INSERT INTO community.reviewers (user_id, granted_by) VALUES ($1, $2)', [
-    body.user.id,
+    userId,
     'test-operator',
   ]);
-  assert.equal(await isReviewer(body.user.id), true);
+  assert.equal(await isReviewer(userId), true);
   assert.equal(await getSession(new Headers()), null);
-  await post('/sign-out', {}, cookie);
-  assert.equal(await reopened.api.getSession({ headers: new Headers({ cookie }) }), null);
-});
-
-test('failed OTP delivery is rejected and an expired code cannot authenticate', async (t) => {
-  const store = await createStore({ mode: 'local', path: 'memory://', seed: false });
-  t.after(() => store.close());
-  const environment = {
-    NODE_ENV: 'test',
-    BETTER_AUTH_URL: 'http://localhost:3000',
-    BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-bytes-long',
-  };
-  const unavailable = await createAuth(store, environment, async () => {
-    throw new Error('Email unavailable');
-  });
-  const request = (path: string, body: unknown) =>
-    new Request(`http://localhost:3000/api/auth${path}`, {
+  await auth.handler(
+    new Request(`${origin}/api/auth/sign-out`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Origin: 'http://localhost:3000',
-        'x-forwarded-for': '192.0.2.11',
-      },
-      body: JSON.stringify(body),
-    });
-  assert.ok(
-    (
-      await unavailable.handler(
-        request('/email-otp/send-verification-otp', {
-          email: 'failed@example.org',
-          type: 'sign-in',
-        }),
-      )
-    ).status >= 400,
+      headers: { 'Content-Type': 'application/json', Origin: origin, cookie },
+      body: '{}',
+    }),
   );
-  let code = '';
-  const auth = await createAuth(store, environment, async (_email, otp) => {
-    code = otp;
-  });
-  assert.equal(
-    (
-      await auth.handler(
-        request('/email-otp/send-verification-otp', {
-          email: 'expired@example.org',
-          type: 'sign-in',
-        }),
-      )
-    ).status,
-    200,
-  );
-  await store.query(
-    "UPDATE community.auth_verification SET expires_at = now() - interval '1 minute'",
-  );
-  assert.ok(
-    (await auth.handler(request('/sign-in/email-otp', { email: 'expired@example.org', otp: code })))
-      .status >= 400,
-  );
-  assert.equal((await store.query('SELECT id FROM community.auth_user')).rows.length, 0);
-});
-
-test('untrusted forwarded addresses cannot bypass the OTP send limit', async (t) => {
-  const store = await createStore({ mode: 'local', path: 'memory://', seed: false });
-  t.after(() => store.close());
-  const auth = await createAuth(
-    store,
-    {
-      NODE_ENV: 'test',
-      BETTER_AUTH_URL: 'http://localhost:3000',
-      BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-bytes-long',
-      TRUST_PROXY: '0',
-    },
-    async () => {},
-  );
-  for (let index = 0; index < 4; index++) {
-    const response = await auth.handler(
-      new Request('http://localhost:3000/api/auth/email-otp/send-verification-otp', {
-        method: 'POST',
-        headers: {
-          Origin: 'http://localhost:3000',
-          'Content-Type': 'application/json',
-          'x-forwarded-for': `192.0.2.${index + 1}`,
-        },
-        body: JSON.stringify({ email: `visitor${index}@example.org`, type: 'sign-in' }),
-      }),
-    );
-    assert.equal(response.status, index < 3 ? 200 : 429);
-  }
+  assert.equal(await reopened.api.getSession({ headers: new Headers({ cookie }) }), null);
 });

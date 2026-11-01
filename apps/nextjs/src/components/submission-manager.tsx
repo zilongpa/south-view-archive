@@ -9,7 +9,6 @@ import {
   FileText,
   ImageOff,
   LoaderCircle,
-  Mail,
   MessageSquarePlus,
 } from 'lucide-react';
 import {
@@ -19,6 +18,7 @@ import {
   type SubmissionRecord,
 } from '@southview/validators';
 import {
+  alsoFor,
   communityRequest,
   uploadCommunityPhoto,
   privatePhotoUrl,
@@ -29,6 +29,7 @@ import {
   type CommunitySession,
 } from '@/lib/community-client';
 import { CommunityNotice } from './community-shell';
+import { copy } from '@/lib/copy';
 
 export function PrivateSubmissionPhoto({
   submissionId,
@@ -112,6 +113,7 @@ export function SubmissionManager({ id }: { id?: string }) {
   const [submission, setSubmission] = useState<SubmissionRecord | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [token, setToken] = useState<string>();
+  const [also, setAlso] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -139,6 +141,7 @@ export function SubmissionManager({ id }: { id?: string }) {
       const access = await communityRequest<CommunitySession>('/session');
       setSession(access);
       if (id) {
+        setAlso(alsoFor().filter((other) => other !== id));
         const receipt = receiptFor(id);
         setToken(receipt);
         const result = await communityRequest<{ submission: SubmissionRecord }>(
@@ -327,7 +330,7 @@ export function SubmissionManager({ id }: { id?: string }) {
             <div className="community-session-bar">
               <span>Signed in as {session.user.email}</span>
               <Link className="community-text-button" href="/contribute">
-                Share another story
+                {copy.share}
               </Link>
               <button
                 className="community-text-button"
@@ -368,18 +371,18 @@ export function SubmissionManager({ id }: { id?: string }) {
                   be linked from their private receipt pages.
                 </p>
                 <Link className="community-primary" href="/contribute">
-                  Share a story <ArrowRight size={17} />
+                  {copy.share} <ArrowRight size={17} />
                 </Link>
               </div>
             )}
           </>
         ) : (
           <div className="community-empty">
-            <Mail size={33} />
+            <FileText size={33} />
             <h2>Find the stories you have shared.</h2>
             <p>
-              Sign in to view your contributions. If you contributed as a guest, open the private
-              receipt link you saved.
+              Sign in with Google to view your contributions. If you contributed as a guest, open
+              the private link you saved after sending; the archive does not send email.
             </p>
             <Link className="community-primary" href="/sign-in?next=%2Fmy-contributions">
               Sign in <ArrowRight size={17} />
@@ -423,17 +426,36 @@ export function SubmissionManager({ id }: { id?: string }) {
             {submission.updatedAt.slice(0, 10)}
           </p>
         </div>
-        {submission.status === 'pending' && (
-          <CommunityNotice title="Thank you for helping preserve this story">
-            Archive reviewers will review your contribution. It will remain private until approved.
+        {token && (
+          <CommunityNotice title="Save this private link">
+            <p>
+              The archive does not send email. This link is the only way back to your story, the
+              review team’s replies, and the published entry. Keep it private.
+            </p>
+            <div className="community-actions">
+              <button className="community-primary" onClick={copyReceipt}>
+                {copied ? <Check size={15} /> : <Copy size={15} />}
+                {copied ? 'Private link copied' : 'Copy my private link'}
+              </button>
+            </div>
           </CommunityNotice>
         )}
-        {submission.mailStatus && !['sent', 'delivered'].includes(submission.mailStatus) && (
-          <CommunityNotice title="Keep this receipt page">
-            {submission.mailStatus === 'local'
-              ? 'A test receipt was written to the developer’s private outbox. No email was sent.'
-              : 'Email delivery is not confirmed.'}{' '}
-            This page remains your place to check the review and add context.
+        {also.length > 0 && token && (
+          <CommunityNotice title={`You sent ${also.length + 1} additions together`}>
+            <p>Each one is reviewed separately. The same private link opens all of them:</p>
+            <ul className="community-also-list">
+              {also.map((other, index) => (
+                <li key={other}>
+                  <Link href={submissionReceiptUrl(other, token)}>Addition {index + 2}</Link>
+                </li>
+              ))}
+            </ul>
+          </CommunityNotice>
+        )}
+        {submission.status === 'pending' && (
+          <CommunityNotice title="Thank you for helping preserve this story">
+            Archive reviewers will read your story. It stays private until approved; their replies
+            appear on this page.
           </CommunityNotice>
         )}
         <div className="community-preview">
@@ -700,7 +722,10 @@ export function SubmissionManager({ id }: { id?: string }) {
         {!submission.userId && (
           <div className="community-aside-card">
             <h2>Keep it with your account.</h2>
-            <p>Sign in using the submission email to connect this contribution to your account.</p>
+            <p>
+              Sign in with a Google account that uses the same email to connect this story to your
+              account.
+            </p>
             {session?.user ? (
               <button
                 className="community-primary"
