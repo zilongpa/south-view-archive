@@ -54,6 +54,7 @@ type PlaceDraft = {
   precision: 'reference' | 'address' | 'verified' | 'unmapped';
   note: string;
   relationship: string;
+  summary: string;
 };
 /** In-page additions say where they belong; the desk starts there so one click publishes them. */
 function defaultApplyTo(record: SubmissionRecord): ReviewInput['applyTo'] {
@@ -73,6 +74,7 @@ function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraf
     precision: 'unmapped',
     note: '',
     relationship: '',
+    summary: '',
   };
   const placement = record.input.placement;
   if (placement?.section !== 'places') return empty;
@@ -91,6 +93,7 @@ function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraf
         ? `Position moved by the contributor; not independently verified. Previously: ${existing.locationNote}`
         : existing.locationNote,
       relationship: relation?.label ?? record.input.title,
+      summary: placement.proposedPlaceSummary ?? existing.summary,
     };
   }
   const coordinates = placement.proposedCoordinates;
@@ -105,6 +108,7 @@ function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraf
       ? 'Position marked on the map by the contributor; not independently verified.'
       : '',
     relationship: record.input.title,
+    summary: placement.proposedPlaceSummary ?? '',
   };
 }
 function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['applyTo']) {
@@ -121,6 +125,7 @@ function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['ap
     const changes = [
       placement.proposedPlaceName ? 'renamed it' : '',
       placement.proposedCoordinates ? 'moved its pin' : '',
+      placement.proposedPlaceSummary ? 'described the place itself' : '',
       placement.originalText ? 'rewrote how it relates to this person' : '',
     ].filter(Boolean);
     return `The contributor edited an existing place in place${changes.length ? ` and ${changes.join(', ')}` : ''}. Publishing as a map place update changes that place and its link to this person; the earlier version stays recoverable by withdrawal.`;
@@ -518,6 +523,7 @@ function ReviewEditor({
             precision: chosen.precision,
             note: chosen.locationNote,
             relationship: '',
+            summary: chosen.summary,
           }
         : {
             id: '',
@@ -528,6 +534,7 @@ function ReviewEditor({
             precision: 'unmapped',
             note: '',
             relationship: '',
+            summary: '',
           },
     );
   }
@@ -590,6 +597,7 @@ function ReviewEditor({
                     precision: place.precision,
                     locationNote: place.note,
                     relationship: place.relationship,
+                    summary: place.summary,
                   },
                 }
               : {}),
@@ -977,6 +985,18 @@ function ReviewEditor({
                         value={place.name}
                         onChange={(event) =>
                           setPlace((previous) => ({ ...previous, name: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="community-field">
+                      <span>About this place (public)</span>
+                      <textarea
+                        value={place.summary}
+                        maxLength={4000}
+                        rows={3}
+                        placeholder="What this place is, independent of any one person. Shown on the map and the place page."
+                        onChange={(event) =>
+                          setPlace((previous) => ({ ...previous, summary: event.target.value }))
                         }
                       />
                     </label>

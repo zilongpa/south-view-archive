@@ -457,6 +457,14 @@ export function OriginalSubmission({
             </dd>
           </div>
         )}
+        {record.input.placement?.proposedPlaceSummary && (
+          <div>
+            <dt>About the place</dt>
+            <dd className="review-original-paragraph">
+              {record.input.placement.proposedPlaceSummary}
+            </dd>
+          </div>
+        )}
         {record.input.placement?.originalText && (
           <div>
             <dt>

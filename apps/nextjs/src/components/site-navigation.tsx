@@ -88,7 +88,9 @@ export function SiteNavigation({
   }, []);
 
   const active =
-    pathname.startsWith('/people/') || pathname.startsWith('/contributions/')
+    pathname.startsWith('/people/') ||
+    pathname.startsWith('/places/') ||
+    pathname.startsWith('/contributions/')
       ? '/explore'
       : pathname.startsWith('/submissions/') || pathname === '/sign-in'
         ? '/my-contributions'
@@ -112,7 +114,9 @@ export function SiteNavigation({
       key={href}
       className={account ? styles.account : undefined}
       href={
-        href === '/contribute' && personId ? `/contribute?person=${encodeURIComponent(personId)}` : href
+        href === '/contribute' && personId
+          ? `/contribute?person=${encodeURIComponent(personId)}`
+          : href
       }
       aria-current={active === href ? 'page' : undefined}
       target={embed ? '_blank' : undefined}

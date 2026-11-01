@@ -224,6 +224,12 @@ test('editing an existing place sends only what changed, and refuses a no-op', (
     proposedCoordinates: [-84.381, 33.7552],
     proposedScope: 'atlanta',
   });
+  const described = { ...existing, placeSummary: 'A Baptist congregation on Auburn Avenue since 1869.' };
+  assert.deepEqual(validateBlock(described), []);
+  assert.equal(
+    blockToSubmissionInput(described, person, contact).placement?.proposedPlaceSummary,
+    'A Baptist congregation on Auburn Avenue since 1869.',
+  );
   const renamed = { ...existing, proposedPlaceName: 'Wheat Street Baptist Church (historic)' };
   const renamedInput = blockToSubmissionInput(renamed, person, contact);
   assert.equal(renamedInput.placement?.proposedPlaceName, 'Wheat Street Baptist Church (historic)');

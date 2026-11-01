@@ -25,6 +25,9 @@ export type EditBlock = {
   /** For place edits: the place's name and position as they were, to detect what changed. */
   originalName?: string;
   originalCoordinates?: [number, number] | null;
+  /** A description of the place itself, separate from the person's connection to it. */
+  placeSummary?: string;
+  originalPlaceSummary?: string;
   title: string;
   body: string;
   context: string;
@@ -97,6 +100,7 @@ export function validateBlock(block: EditBlock): BlockIssue[] {
     block.kind === 'correction' &&
     block.body.trim() === block.originalText?.trim() &&
     block.proposedPlaceName.trim() === block.originalName &&
+    (block.placeSummary ?? '').trim() === (block.originalPlaceSummary ?? '').trim() &&
     (!block.coordinates || sameCoordinates(block.coordinates, block.originalCoordinates))
   )
     issues.push({
@@ -141,6 +145,10 @@ export function blockToSubmissionInput(
     (!block.placeIds.length || block.kind === 'correction') &&
     !sameCoordinates(block.coordinates, block.originalCoordinates)
       ? { proposedCoordinates: block.coordinates, proposedScope: block.scope ?? 'cemetery' }
+      : {}),
+    ...(block.placeSummary?.trim() &&
+    block.placeSummary.trim() !== block.originalPlaceSummary?.trim()
+      ? { proposedPlaceSummary: block.placeSummary.trim() }
       : {}),
   };
   return {
@@ -206,6 +214,12 @@ export function restoreEditSession(value: unknown): EditSession | null {
       originalName:
         typeof block.originalName === 'string' ? block.originalName.slice(0, 160) : undefined,
       originalCoordinates: restoreCoordinates(block.originalCoordinates),
+      placeSummary:
+        typeof block.placeSummary === 'string' ? block.placeSummary.slice(0, 4000) : undefined,
+      originalPlaceSummary:
+        typeof block.originalPlaceSummary === 'string'
+          ? block.originalPlaceSummary.slice(0, 4000)
+          : undefined,
       coordinates: restoreCoordinates(block.coordinates),
       scope: block.scope === 'atlanta' || block.scope === 'cemetery' ? block.scope : undefined,
       title: text(block.title, 160),

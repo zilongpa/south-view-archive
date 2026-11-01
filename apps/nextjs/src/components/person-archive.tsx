@@ -108,7 +108,7 @@ export function PersonArchive({
     ...person.summaryCitations,
     ...person.biography.flatMap((block) => block.citations),
     ...relations.flatMap((relation) => relation.citations),
-    ...places.flatMap((place) => place.coordinateCitations),
+    ...places.flatMap((place) => [...place.summaryCitations, ...place.coordinateCitations]),
   ];
   const usedSourceIds = new Set([
     ...citations.map((citation) => citation.sourceId),
@@ -261,6 +261,15 @@ export function PersonArchive({
                         {place.scope === 'cemetery' ? 'South-View Cemetery' : 'Atlanta'} ·{' '}
                         {relation.label}
                       </p>
+                      {place.summary && (
+                        <p className="archive-place-summary">
+                          {place.summary}{' '}
+                          <CitationMarks
+                            citations={place.summaryCitations}
+                            sources={data.sources}
+                          />
+                        </p>
+                      )}
                       <p>
                         {relation.description}{' '}
                         <CitationMarks citations={relation.citations} sources={data.sources} />
@@ -307,6 +316,7 @@ export function PersonArchive({
                           placeId: place.id,
                           name: place.name,
                           description: relation.description,
+                          summary: place.summary,
                           coordinates: place.coordinates,
                           scope: place.scope,
                         }}

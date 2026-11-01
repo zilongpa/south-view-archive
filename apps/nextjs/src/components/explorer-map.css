@@ -665,3 +665,82 @@
     left: 50%;
   }
 }
+
+/* Place-centric panel: the place, then the people connected to it. */
+.map-explorer .detail-place {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.map-explorer .detail-place .theme-label {
+  display: block;
+  margin-bottom: 6px;
+}
+.map-explorer .detail-place h2 {
+  font-size: 28px;
+  line-height: 1.15;
+  margin: 0 0 4px;
+}
+.map-explorer .detail-place .person-years {
+  margin: 0;
+}
+.map-explorer .place-person-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: #faf6ee;
+  border: 1px solid #e3dccd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.map-explorer .place-person-row:hover,
+.map-explorer .place-person-row:focus-visible {
+  border-color: var(--wine);
+  background: #fbf2ec;
+}
+.map-explorer .place-person-row > span {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.map-explorer .place-person-row strong {
+  font:
+    18px/1.2 Georgia,
+    serif;
+  font-weight: 400;
+}
+.map-explorer .place-person-row small {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.map-explorer .place-person-row .person-image,
+.map-explorer .place-person-row .person-monogram {
+  width: 44px;
+  height: 54px;
+  flex: none;
+}
+.map-explorer .place-person-row svg:last-child {
+  flex: none;
+  color: var(--wine);
+}
+.map-explorer .connected-place .relation-note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #5a554b;
+  margin: 6px 0 0;
+}
+.map-explorer .full-record-link > span {
+  display: grid;
+  gap: 2px;
+}
+.map-explorer .full-record-link small {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}

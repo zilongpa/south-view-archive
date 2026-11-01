@@ -328,9 +328,12 @@ export default function ArchiveMap(props: Props) {
         el.classList.toggle('is-cemetery', place.scope === 'cemetery');
         el.classList.toggle('is-atlanta', place.scope !== 'cemetery');
         el.classList.toggle('is-selected', current.current.selectedPlaceId === place.id);
+        const names = personIds
+          .map((id) => current.current.people.find((p) => p.id === id)?.name)
+          .filter((name): name is string => !!name);
         el.setAttribute(
           'aria-label',
-          `${person.name} — ${place.name}. ${place.scope === 'cemetery' ? 'Grave marker.' : 'Related place.'} ${place.precision === 'reference' ? 'Reference location.' : ''}`.trim(),
+          `${place.name}. ${place.scope === 'cemetery' ? 'Grave marker' : 'Related place'}${names.length ? ` of ${names.join(', ')}` : ''}. ${place.precision === 'reference' ? 'Reference location.' : ''}`.trim(),
         );
         el.setAttribute('aria-pressed', String(current.current.selectedPlaceId === place.id));
         // Fixed geometry: the SVG's bottom tip is the Marker's bottom-centre anchor.

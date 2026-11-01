@@ -2424,3 +2424,64 @@ svg {
     gap: 8px;
   }
 }
+
+/* Place pages: a place in its own right, and the people connected to it. */
+.archive-place-summary {
+  font-size: 17px;
+  line-height: 1.8;
+  margin: 0 0 10px;
+}
+.place-person {
+  border-bottom: 1px solid var(--line);
+  padding: 24px 0;
+}
+.place-person-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 8px;
+}
+.place-person-identity img,
+.place-person-monogram {
+  width: 56px;
+  height: 68px;
+  object-fit: cover;
+  object-position: 50% 20%;
+  flex: none;
+}
+.place-person-monogram {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  background: #ede7db;
+  color: #5f5b52;
+  font:
+    20px/1 Georgia,
+    serif;
+}
+.place-person-identity strong {
+  display: block;
+  font:
+    25px/1.2 Georgia,
+    serif;
+  font-weight: 400;
+}
+.place-person-identity small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.place-person-identity:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.place-person > .archive-eyebrow {
+  font-size: 10px;
+  margin: 6px 0 10px;
+}
+.place-person > p:not(.archive-eyebrow) {
+  font-size: 17px;
+  line-height: 1.8;
+  margin: 10px 0;
+}

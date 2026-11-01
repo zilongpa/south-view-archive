@@ -638,6 +638,9 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       precision: patch.precision,
       locationNote: patch.locationNote,
       coordinateCitations: patch.coordinates ? citations : [],
+      ...(patch.summary !== undefined && patch.summary !== (current?.summary ?? '')
+        ? { summary: patch.summary, summaryCitations: citations }
+        : {}),
       creditIds: [
         ...new Set([
           ...(Array.isArray(current?.creditIds) ? (current.creditIds as string[]) : []),

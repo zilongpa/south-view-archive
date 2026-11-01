@@ -36,6 +36,8 @@ export const placementSchema = z.object({
   /** The paragraph text the contributor edited, so reviewers can compare and publication can match it. */
   originalText: z.string().trim().max(20000).optional(),
   proposedPlaceName: z.string().trim().max(160).optional(),
+  /** A description of the place itself, offered alongside the person's connection to it. */
+  proposedPlaceSummary: z.string().trim().max(4000).optional(),
   proposedScope: z.enum(['cemetery', 'atlanta']).optional(),
   /** A point the contributor marked on the map, longitude first. Reviewers confirm before publishing. */
   proposedCoordinates: z
@@ -183,6 +185,8 @@ export const reviewInputSchema = z
         precision: z.enum(['reference', 'address', 'verified', 'unmapped']),
         locationNote: z.string().min(1),
         relationship: z.string().min(1),
+        /** Public description of the place itself; omitted keeps the current one. */
+        summary: z.string().trim().max(4000).optional(),
       })
       .optional(),
   })

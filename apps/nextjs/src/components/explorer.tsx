@@ -16,6 +16,7 @@ import {
   Search,
   SlidersHorizontal,
   Sprout,
+  UserRound,
   X,
 } from 'lucide-react';
 import './explorer-map.css';
@@ -210,7 +211,37 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       p.id === (state.place ?? selectedRelations[0]?.placeId) &&
       selectedRelations.some((r) => r.placeId === p.id),
   );
+  // A marker selects the place itself; the panel then lists everyone connected to it.
+  const placeOnly = selected ? null : (archive.places.find((p) => p.id === state.place) ?? null);
+  const placePeople = placeOnly
+    ? archive.relations
+        .filter((r) => r.placeId === placeOnly.id)
+        .flatMap((relation) => {
+          const person = archive.people.find((p) => p.id === relation.personId);
+          return person ? [{ relation, person }] : [];
+        })
+    : [];
+  const hasSelection = !!selected || !!placeOnly;
   const preview = archive.people.find((p) => p.id === previewTarget?.personId);
+  const previewPeople = previewTarget?.placeId
+    ? archive.relations
+        .filter((r) => r.placeId === previewTarget.placeId)
+        .map((r) => archive.people.find((p) => p.id === r.personId)?.name)
+        .filter((name): name is string => !!name)
+    : [];
+  const selectPlace = useCallback(
+    (placeId: string) => {
+      if (!archive.places.some((p) => p.id === placeId)) return;
+      previewController.clear();
+      triggerRef.current = document.activeElement as HTMLElement;
+      update({ person: null, place: placeId, viewport: null }, true);
+      setResetEpoch((n) => n + 1);
+      setFocusSelection(true);
+      if (window.matchMedia('(max-width: 760px)').matches) setShowResults(false);
+      requestAnimationFrame(() => detailRef.current?.focus({ preventScroll: true }));
+    },
+    [archive, update, previewController],
+  );
   const selectPerson = useCallback(
     (personId: string, placeId?: string) => {
       const selection = previewSelection(archive, liveState.current.scope, { personId, placeId });
@@ -237,7 +268,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (liveState.current.person) closeDetail();
+        if (liveState.current.person || liveState.current.place) closeDetail();
         else previewController.clear();
       }
     };
@@ -264,13 +295,18 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     },
     [archive, update],
   );
-  const detailHref = selected
-    ? `/people/${selected.id}?from=${encodeURIComponent(serializeExploreState(state))}`
+  const recordPath = selected
+    ? `/people/${selected.id}`
+    : placeOnly
+      ? `/places/${placeOnly.id}`
+      : '';
+  const detailHref = recordPath
+    ? `${recordPath}?from=${encodeURIComponent(serializeExploreState(state))}`
     : '';
   async function copyLink(kind: 'map' | 'person') {
     const origin = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
     const url = new URL(
-      kind === 'person' && selected ? `/people/${selected.id}` : serializeExploreState(state, true),
+      kind === 'person' && recordPath ? recordPath : serializeExploreState(state, true),
       origin,
     ).href;
     try {
@@ -283,7 +319,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   }
   return (
     <div
-      className={`explorer map-explorer ${state.embed ? 'is-embedded' : ''} ${showResults ? 'results-open' : ''} ${selected ? 'has-selection' : ''}`}
+      className={`explorer map-explorer ${state.embed ? 'is-embedded' : ''} ${showResults ? 'results-open' : ''} ${hasSelection ? 'has-selection' : ''}`}
       style={detailResize.style}
     >
       <SiteNavigation
@@ -303,7 +339,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       <main id="main-content" tabIndex={-1}>
         <h1 className="sr-only">Explore South-View and Atlanta</h1>
         <section className="atlas" aria-label="Explore the collection">
-          <div className={`atlas-body ${selected ? 'has-selection' : ''}`}>
+          <div className={`atlas-body ${hasSelection ? 'has-selection' : ''}`}>
             <aside className="people-sidebar" aria-label="Search and browse people">
               <div className="search-controls">
                 <label className="search-box" htmlFor="archive-search">
@@ -474,7 +510,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   viewport={state.viewport}
                   resetEpoch={resetEpoch}
                   focusSelection={focusSelection}
-                  onSelect={selectPerson}
+                  onSelect={(_personId, placeId) => selectPlace(placeId)}
                   onPreview={onPreview}
                   onViewport={onViewport}
                   onFailure={() => setShowResults(true)}
@@ -488,19 +524,20 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   <span>Opening the map…</span>
                 </div>
               )}
-              {preview && previewTarget && !selected && (
+              {preview && previewTarget && !hasSelection && (
                 <MapPreview
                   target={previewTarget}
                   person={preview}
                   place={archive.places.find((place) => place.id === previewTarget.placeId)}
+                  people={previewPeople}
                 />
               )}
-              {selected && (
+              {hasSelection && (
                 <aside
                   ref={detailRef}
                   className={`detail-panel ${detailResize.panelClass}`}
                   tabIndex={-1}
-                  aria-label={`${selected.name} preview`}
+                  aria-label={`${selected ? selected.name : placeOnly!.name} preview`}
                 >
                   {detailResize.handle}
                   <div className="detail-top">
@@ -510,76 +547,143 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                     </button>
                   </div>
                   <div className="detail-scroll" ref={detailScrollRef}>
-                    <div className="detail-person">
-                      <Monogram person={selected} large />
-                      <div className="detail-identity">
-                        <span className="theme-label">{selected.themes.join(' · ')}</span>
-                        <h2>{displayPersonName(selected.name)}</h2>
-                        {(selected.birthYear || selected.deathYear) && (
-                          <p className="person-years">
-                            {selected.birthYear
-                              ? `${selected.birthYear} — ${selected.deathYear ?? ''}`
-                              : `Remembered · ${selected.deathYear}`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="detail-summary">{selected.summary}</p>
-                    <section className="connected-places">
-                      <h3>
-                        <MapPin size={16} />
-                        {state.scope === 'cemetery' ? 'At South-View' : 'Atlanta & South-View'}
-                      </h3>
-                      {selectedRelations.length === 0 ? (
-                        <p className="quiet-note">
-                          No location has been documented in this area yet.
+                    {placeOnly && (
+                      <>
+                        <div className="detail-place">
+                          <span className="theme-label">
+                            {placeOnly.scope === 'cemetery'
+                              ? 'Grave marker · South-View'
+                              : 'Place · Atlanta'}
+                          </span>
+                          <h2>{placeOnly.name}</h2>
+                          {placeOnly.address && <p className="person-years">{placeOnly.address}</p>}
+                        </div>
+                        <p className="detail-summary">
+                          {placeOnly.summary ||
+                            placePeople[0]?.relation.description ||
+                            placeOnly.locationNote}
                         </p>
-                      ) : (
-                        selectedRelations.map((relation) => {
-                          const place = archive.places.find((p) => p.id === relation.placeId)!;
-                          return (
-                            <div
-                              className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''}`}
+                        <section className="connected-places">
+                          <h3>
+                            <UserRound size={16} />
+                            {placeOnly.scope === 'cemetery'
+                              ? 'Remembered here'
+                              : placePeople.length === 1
+                                ? 'Connected here'
+                                : 'People connected here'}
+                          </h3>
+                          {placePeople.length === 0 && (
+                            <p className="quiet-note">
+                              No person has been connected to this place yet.
+                            </p>
+                          )}
+                          {placePeople.map(({ person, relation }) => (
+                            <button
+                              type="button"
+                              className="place-person-row"
                               key={relation.id}
+                              onClick={() => selectPerson(person.id, placeOnly.id)}
                             >
-                              <span className="eyebrow">
-                                {relation.label}
-                                {place.precision === 'reference'
-                                  ? ' · reference position'
-                                  : place.precision === 'unmapped'
-                                    ? ' · not yet mapped'
+                              <Monogram person={person} />
+                              <span>
+                                <strong>{displayPersonName(person.name)}</strong>
+                                <small>
+                                  {person.birthYear
+                                    ? `${person.birthYear} — ${person.deathYear ?? ''} · `
                                     : ''}
+                                  {relation.label}
+                                </small>
                               </span>
-                              <button
-                                disabled={!place.coordinates}
-                                aria-current={
-                                  place.id === selectedPlace?.id ? 'location' : undefined
-                                }
-                                onClick={() => {
-                                  setFocusSelection(true);
-                                  update({ place: place.id, viewport: null }, true);
-                                  setResetEpoch((n) => n + 1);
-                                }}
-                              >
-                                <strong>{place.name}</strong>
-                                <ArrowUpRight size={15} />
-                              </button>
-                            </div>
-                          );
-                        })
-                      )}
-                      <button
-                        className="other-scope"
-                        onClick={() =>
-                          changeScope(state.scope === 'cemetery' ? 'atlanta' : 'cemetery')
-                        }
-                      >
-                        {state.scope === 'cemetery'
-                          ? 'See their life across Atlanta'
-                          : 'See their resting place'}
-                        <ArrowRight size={15} />
-                      </button>
-                    </section>
+                              <ArrowRight size={15} />
+                            </button>
+                          ))}
+                          <p className="quiet-note">
+                            {placeOnly.precision === 'reference'
+                              ? 'Reference position, not independently verified.'
+                              : placeOnly.precision === 'address'
+                                ? 'Address-level position.'
+                                : placeOnly.precision === 'verified'
+                                  ? 'Verified position.'
+                                  : 'Not yet mapped.'}
+                          </p>
+                        </section>
+                      </>
+                    )}
+                    {selected && (
+                      <>
+                        <div className="detail-person">
+                          <Monogram person={selected} large />
+                          <div className="detail-identity">
+                            <span className="theme-label">{selected.themes.join(' · ')}</span>
+                            <h2>{displayPersonName(selected.name)}</h2>
+                            {(selected.birthYear || selected.deathYear) && (
+                              <p className="person-years">
+                                {selected.birthYear
+                                  ? `${selected.birthYear} — ${selected.deathYear ?? ''}`
+                                  : `Remembered · ${selected.deathYear}`}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <p className="detail-summary">{selected.summary}</p>
+                        <section className="connected-places">
+                          <h3>
+                            <MapPin size={16} />
+                            {state.scope === 'cemetery' ? 'At South-View' : 'Atlanta & South-View'}
+                          </h3>
+                          {selectedRelations.length === 0 ? (
+                            <p className="quiet-note">
+                              No location has been documented in this area yet.
+                            </p>
+                          ) : (
+                            selectedRelations.map((relation) => {
+                              const place = archive.places.find((p) => p.id === relation.placeId)!;
+                              return (
+                                <div
+                                  className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''}`}
+                                  key={relation.id}
+                                >
+                                  <span className="eyebrow">
+                                    {relation.label}
+                                    {place.precision === 'reference'
+                                      ? ' · reference position'
+                                      : place.precision === 'unmapped'
+                                        ? ' · not yet mapped'
+                                        : ''}
+                                  </span>
+                                  <button
+                                    disabled={!place.coordinates}
+                                    aria-current={
+                                      place.id === selectedPlace?.id ? 'location' : undefined
+                                    }
+                                    onClick={() => {
+                                      setFocusSelection(true);
+                                      update({ place: place.id, viewport: null }, true);
+                                      setResetEpoch((n) => n + 1);
+                                    }}
+                                  >
+                                    <strong>{place.name}</strong>
+                                    <ArrowUpRight size={15} />
+                                  </button>
+                                  <p className="relation-note">{relation.description}</p>
+                                </div>
+                              );
+                            })
+                          )}
+                          <button
+                            className="other-scope"
+                            onClick={() =>
+                              changeScope(state.scope === 'cemetery' ? 'atlanta' : 'cemetery')
+                            }
+                          >
+                            {state.scope === 'cemetery'
+                              ? 'See their life across Atlanta'
+                              : 'See their resting place'}
+                            <ArrowRight size={15} />
+                          </button>
+                        </section>
+                      </>
+                    )}
                   </div>
                   <div className="detail-bottom">
                     <Link
@@ -588,16 +692,16 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                       target={state.embed ? '_blank' : undefined}
                       rel={state.embed ? 'noopener noreferrer' : undefined}
                     >
-                      Read the full record <ArrowRight size={17} />
+                      <span>
+                        Dig deeper
+                        <small>
+                          {selected
+                            ? 'Their story, places, sources, and memories'
+                            : 'What this place is, who is connected to it, and the sources'}
+                        </small>
+                      </span>
+                      <ArrowRight size={17} />
                       {state.embed && <span className="sr-only"> (opens in a new tab)</span>}
-                    </Link>
-                    <Link
-                      className="contribute-record"
-                      href={`/people/${selected.id}?edit=1&from=${encodeURIComponent(serializeExploreState(state))}`}
-                      target={state.embed ? '_blank' : undefined}
-                      rel={state.embed ? 'noopener noreferrer' : undefined}
-                    >
-                      {copy.addToPage} <ArrowUpRight size={17} />
                     </Link>
                     <button className="copy-record" onClick={() => copyLink('person')}>
                       {copied ? <Check size={15} /> : <Copy size={15} />}

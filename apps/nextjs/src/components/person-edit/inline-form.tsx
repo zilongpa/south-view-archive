@@ -50,6 +50,7 @@ export type ExistingPlace = {
   placeId: string;
   name: string;
   description: string;
+  summary: string;
   coordinates: [number, number] | null;
   scope: 'cemetery' | 'atlanta';
 };
@@ -70,6 +71,8 @@ function emptyBlock(
       originalText: place.description,
       originalName: place.name,
       originalCoordinates: place.coordinates,
+      placeSummary: place.summary,
+      originalPlaceSummary: place.summary,
       title: '',
       body: place.description,
       context: '',
@@ -222,6 +225,18 @@ export function InlineForm({
               maxLength={160}
             />
           </label>
+          <label className="community-field">
+            <span>
+              About this place <span className="community-hint">(optional)</span>
+            </span>
+            <textarea
+              value={block.placeSummary ?? ''}
+              rows={3}
+              maxLength={4000}
+              placeholder="What this place is, for anyone who finds it on the map."
+              onChange={(event) => patch({ placeSummary: event.target.value })}
+            />
+          </label>
           <LocationPicker
             label="Move the pin if the position is wrong"
             hint="Drag the pin, tap a new spot, or search an address. Leave it where it is if only the text needs changing."
@@ -265,6 +280,20 @@ export function InlineForm({
             <small className="community-field-error" role="alert">
               {issue('place')}
             </small>
+          )}
+          {!block.placeIds.length && (
+            <label className="community-field">
+              <span>
+                About this place <span className="community-hint">(optional)</span>
+              </span>
+              <textarea
+                value={block.placeSummary ?? ''}
+                rows={3}
+                maxLength={4000}
+                placeholder="What this place is, for anyone who finds it on the map."
+                onChange={(event) => patch({ placeSummary: event.target.value })}
+              />
+            </label>
           )}
           {!block.placeIds.length && (
             <LocationPicker
@@ -424,7 +453,8 @@ export function InlineForm({
       </label>
       <div className="community-actions" style={{ marginTop: 4 }}>
         <button className="community-primary" type="submit">
-          {initial ? 'Save changes' : correction ? 'Keep this edit' : 'Add to page'} <ArrowRight size={16} aria-hidden="true" />
+          {initial ? 'Save changes' : correction ? 'Keep this edit' : 'Add to page'}{' '}
+          <ArrowRight size={16} aria-hidden="true" />
         </button>
       </div>
     </form>

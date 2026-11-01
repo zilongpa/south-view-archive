@@ -164,6 +164,7 @@ Main routes:
 - `/explore`: public map and accessible list.
 - `/explore?scope=atlanta`: combined Atlanta and South-View view.
 - `/people/john-lewis`: permanent, directly accessible, shareable person page.
+- `/places/atlanta-city-hall`: a place in its own right: what it is, its position and evidence, and everyone connected to it. Map markers select places; the panel lists the connected people and leads here with **Dig deeper**.
 - `/explore?embed=1`: simplified embedded view.
 - `/people/[id]?edit=1`: in-page additions, paragraph edits, edits to existing places (name, position, description), new places marked on a map, and photographs for an existing person.
 - `/contribute`: one short form for a memory, fact, or photograph about anyone, in the archive or not. `?person=` pre-selects a person; the navigation link passes it from person pages. Once a person is chosen the form offers their known places and hides the new-person fields.
@@ -185,7 +186,7 @@ People, places, person-place relationships, materials, sources, editorial issues
 
 **Vet** uses GPT-6 Luna (`gpt-6-luna`), medium reasoning, and required web search through one awaited OpenAI Responses request. Reports contain individual claims, verdicts, explanations, evidence links, reviewer notes, follow-up questions, limitations, and attachment coverage. Personal memories are not treated as false just because online corroboration is unavailable. Reports are stored privately, survive restarts, and become stale when new original material is added. Duplicate starts are blocked and failed checks can be retried. Human review and publication work independently of Vet.
 
-Set the server-only `OPENAI_API_KEY` in `apps/nextjs/.env.local` or the hosting platform to enable checks. Without it, the desk explicitly shows **Not configured**. Migration `0005_vet.sql` adds the private run history, using the existing PGlite/Supabase data modes and local/S3/R2 photo storage. Public archive and contributor-receipt APIs do not return AI reports. See [AI vetting configuration, privacy, recovery, and acceptance](docs/AI-VETTING.md). The full local suite passed 119 tests, all six workspace type checks and a production build; real OpenAI calls are intentionally deferred until the key is configured.
+Set the server-only `OPENAI_API_KEY` in `apps/nextjs/.env.local` or the hosting platform to enable checks. Without it, the desk explicitly shows **Not configured**. Migration `0005_vet.sql` adds the private run history, using the existing PGlite/Supabase data modes and local/S3/R2 photo storage. Places carry an optional public description (`summary`, with citations) that reviewers edit in the map place panel and contributors can propose from a person page; `pnpm db:backfill-places` fills the fixture descriptions into a database seeded before the field existed (stop a local dev server first). Public archive and contributor-receipt APIs do not return AI reports. See [AI vetting configuration, privacy, recovery, and acceptance](docs/AI-VETTING.md). The full local suite passed 119 tests, all six workspace type checks and a production build; real OpenAI calls are intentionally deferred until the key is configured.
 
 ## Deployment and maintenance
 

@@ -465,6 +465,7 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
               originalText: relation.description,
               proposedCoordinates: [-84.37, 33.702],
               proposedScope: 'cemetery',
+              proposedPlaceSummary: 'A family plot near the chapel, according to the contributor.',
             },
           }),
           guest,
@@ -484,6 +485,7 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
               precision: 'reference',
               locationNote: 'Moved by a contributor; reference position.',
               relationship: relation.label,
+              summary: 'A family plot near the chapel, according to the contributor.',
             },
           }),
           reviewer,
@@ -499,6 +501,15 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         assert.deepEqual(
           after.places.find((item) => item.id === place.id)!.coordinates,
           [-84.37, 33.702],
+        );
+        assert.equal(
+          after.places.find((item) => item.id === place.id)!.summary,
+          'A family plot near the chapel, according to the contributor.',
+        );
+        assert.ok(
+          after.places
+            .find((item) => item.id === place.id)!
+            .summaryCitations.some((citation) => citation.sourceId === before.sources[0]!.id),
         );
         await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
         const restored = await getArchive();
