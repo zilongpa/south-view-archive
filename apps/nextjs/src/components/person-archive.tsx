@@ -577,7 +577,6 @@ export function PersonArchive({
 
       <footer className="archive-footer">
         <span>South-View · History in the Neighborhood</span>
-        <Link href="/about">About this edition</Link>
       </footer>
     </div>
   );

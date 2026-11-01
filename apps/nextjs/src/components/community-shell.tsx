@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, ArrowUpRight, Sprout } from 'lucide-react';
+import { ArrowLeft, Sprout } from 'lucide-react';
 import type { ReactNode } from 'react';
 import './community.css';
 import { SiteNavigation } from './site-navigation';
@@ -44,9 +44,6 @@ export function CommunityShell({
       </main>
       <footer className="community-footer">
         <span>SOUTH-VIEW / A LIVING ARCHIVE</span>
-        <Link href="/about">
-          How we preserve stories <ArrowUpRight size={14} aria-hidden="true" />
-        </Link>
       </footer>
     </div>
   );
