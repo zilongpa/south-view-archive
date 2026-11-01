@@ -693,7 +693,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                       rel={state.embed ? 'noopener noreferrer' : undefined}
                     >
                       <span>
-                        Dig deeper
+                        Open the full page
                         <small>
                           {selected
                             ? 'Their story, places, sources, and memories'

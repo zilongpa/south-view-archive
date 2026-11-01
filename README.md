@@ -164,7 +164,7 @@ Main routes:
 - `/explore`: public map and accessible list.
 - `/explore?scope=atlanta`: combined Atlanta and South-View view.
 - `/people/john-lewis`: permanent, directly accessible, shareable person page.
-- `/places/atlanta-city-hall`: a place in its own right: what it is, its position and evidence, and everyone connected to it. Map markers select places; the panel lists the connected people and leads here with **Dig deeper**.
+- `/places/atlanta-city-hall`: a place in its own right: what it is, its position and evidence, and everyone connected to it. Map markers select places; the panel lists the connected people and leads here with **Open the full page**. A person page links to it as **About this place** with `?person=`, so the place page puts that person's connection first and marks it, and its back link returns to them.
 - `/explore?embed=1`: simplified embedded view.
 - `/people/[id]?edit=1`: in-page additions, paragraph edits, edits to existing places (name, position, description), new places marked on a map, and photographs for an existing person.
 - `/contribute`: one short form for a memory, fact, or photograph about anyone, in the archive or not. `?person=` pre-selects a person; the navigation link passes it from person pages. Once a person is chosen the form offers their known places and hides the new-person fields.

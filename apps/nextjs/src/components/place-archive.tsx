@@ -28,24 +28,35 @@ function initials(name: string) {
     .join('');
 }
 
-/** A place in its own right: what it is, where it is, and the lives connected to it. */
+/**
+ * A place in its own right: what it is, where it is, and the lives connected to it. When the
+ * reader arrives from one person's page, that person's connection comes first and is marked, so
+ * a shared place never loses the life it was reached through.
+ */
 export function PlaceArchive({
   place,
   data,
   returnTo,
   canonicalUrl,
+  fromPerson,
 }: {
   place: Place;
   data: ArchiveData;
   returnTo: string;
   canonicalUrl: string;
+  fromPerson?: Person;
 }) {
   const connections = data.relations
     .filter((relation) => relation.placeId === place.id)
     .flatMap((relation) => {
       const person = data.people.find((item) => item.id === relation.personId);
       return person ? [{ relation, person }] : [];
-    });
+    })
+    .sort(
+      (a, b) => Number(b.person.id === fromPerson?.id) - Number(a.person.id === fromPerson?.id),
+    );
+  const personHref = (person: Person) =>
+    withArchiveReturn(`/people/${encodeURIComponent(person.id)}`, returnTo);
   const citations = [
     ...place.summaryCitations,
     ...place.coordinateCitations,
@@ -64,9 +75,16 @@ export function PlaceArchive({
       <SiteNavigation />
       <main id="main-content">
         <div className="archive-topbar">
-          <Link className="archive-back" href={returnTo}>
-            <ArrowLeft size={18} aria-hidden="true" /> Back to the map
-          </Link>
+          {fromPerson ? (
+            <Link className="archive-back" href={personHref(fromPerson)}>
+              <ArrowLeft size={18} aria-hidden="true" /> Back to{' '}
+              {displayPersonName(fromPerson.name)}
+            </Link>
+          ) : (
+            <Link className="archive-back" href={returnTo}>
+              <ArrowLeft size={18} aria-hidden="true" /> Back to the map
+            </Link>
+          )}
           <a className="archive-permalink" href={canonicalUrl}>
             <ExternalLink size={16} aria-hidden="true" /> Permanent link
           </a>
@@ -119,45 +137,49 @@ export function PlaceArchive({
             {connections.length === 0 && (
               <p className="archive-empty">No person has been connected to this place yet.</p>
             )}
-            {connections.map(({ person, relation }) => (
-              <article className="place-person" key={relation.id}>
-                <Link
-                  className="place-person-identity"
-                  href={withArchiveReturn(`/people/${encodeURIComponent(person.id)}`, returnTo)}
+            {connections.map(({ person, relation }) => {
+              const origin = person.id === fromPerson?.id;
+              return (
+                <article
+                  className={`place-person${origin ? ' is-origin' : ''}`}
+                  key={relation.id}
+                  id={`person-${person.id}`}
                 >
-                  {person.portrait ? (
-                    <img src={person.portrait.url} alt="" />
-                  ) : (
-                    <span className="place-person-monogram" aria-hidden="true">
-                      {initials(person.name)}
-                      <Sprout size={16} strokeWidth={0.8} aria-hidden="true" />
-                    </span>
+                  {origin && (
+                    <p className="place-person-origin">The person whose page led you here</p>
                   )}
-                  <span>
-                    <strong>{displayPersonName(person.name)}</strong>
-                    {years(person) && <small>{years(person)}</small>}
-                  </span>
-                </Link>
-                <p className="archive-eyebrow">{relation.label}</p>
-                <p>
-                  {relation.description}{' '}
-                  <CitationMarks citations={relation.citations} sources={data.sources} />
-                </p>
-                <ProvidedBy
-                  creditIds={relation.creditIds}
-                  title={`${person.name}: connection`}
-                  data={data}
-                  returnTo={returnTo}
-                />
-                <Link
-                  className="archive-text-link"
-                  href={withArchiveReturn(`/people/${encodeURIComponent(person.id)}`, returnTo)}
-                >
-                  Dig deeper into {displayPersonName(person.name)}
-                  <ArrowUpRight size={17} aria-hidden="true" />
-                </Link>
-              </article>
-            ))}
+                  <Link className="place-person-identity" href={personHref(person)}>
+                    {person.portrait ? (
+                      <img src={person.portrait.url} alt="" />
+                    ) : (
+                      <span className="place-person-monogram" aria-hidden="true">
+                        {initials(person.name)}
+                        <Sprout size={16} strokeWidth={0.8} aria-hidden="true" />
+                      </span>
+                    )}
+                    <span>
+                      <strong>{displayPersonName(person.name)}</strong>
+                      {years(person) && <small>{years(person)}</small>}
+                    </span>
+                  </Link>
+                  <p className="archive-eyebrow">{relation.label}</p>
+                  <p>
+                    {relation.description}{' '}
+                    <CitationMarks citations={relation.citations} sources={data.sources} />
+                  </p>
+                  <ProvidedBy
+                    creditIds={relation.creditIds}
+                    title={`${person.name}: connection`}
+                    data={data}
+                    returnTo={returnTo}
+                  />
+                  <Link className="archive-text-link" href={personHref(person)}>
+                    {origin ? 'Back to' : 'Read more about'} {displayPersonName(person.name)}
+                    <ArrowUpRight size={17} aria-hidden="true" />
+                  </Link>
+                </article>
+              );
+            })}
           </section>
 
           <section

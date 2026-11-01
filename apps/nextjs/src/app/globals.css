@@ -2426,6 +2426,28 @@ svg {
 }
 
 /* Place pages: a place in its own right, and the people connected to it. */
+.archive-place-record {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 15px 64px 70px;
+  box-sizing: content-box;
+}
+@media (max-width: 1100px) {
+  .archive-place-record {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+}
+@media (max-width: 760px) {
+  .archive-place-record {
+    padding: 10px 22px 50px;
+  }
+  .place-person.is-origin {
+    margin: 0 -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
 .archive-place-summary {
   font-size: 17px;
   line-height: 1.8;
@@ -2434,6 +2456,24 @@ svg {
 .place-person {
   border-bottom: 1px solid var(--line);
   padding: 24px 0;
+}
+.place-person.is-origin {
+  background: #f7f2e8;
+  border-left: 3px solid var(--wine);
+  padding: 20px 20px 24px;
+  margin: 0 -20px;
+}
+.place-person-origin {
+  margin: 0 0 12px;
+  color: var(--wine);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.archive-place-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
 }
 .place-person-identity {
   display: inline-flex;

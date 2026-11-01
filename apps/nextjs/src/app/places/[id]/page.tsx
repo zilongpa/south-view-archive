@@ -57,10 +57,21 @@ export default async function PlacePage({ params, searchParams }: Props) {
   const [{ id }, query, data] = await Promise.all([params, searchParams, getSnapshot()]);
   const place = data.places.find((item) => item.id === id);
   if (!place) notFound();
+  const fromPerson =
+    typeof query.person === 'string'
+      ? data.people.find(
+          (item) =>
+            item.id === query.person &&
+            data.relations.some(
+              (relation) => relation.placeId === place.id && relation.personId === item.id,
+            ),
+        )
+      : undefined;
   return (
     <PlaceArchive
       place={place}
       data={data}
+      fromPerson={fromPerson}
       returnTo={safeReturnPath(
         query.from,
         `/explore?scope=${place.scope}&place=${encodeURIComponent(place.id)}`,

@@ -299,11 +299,23 @@ export function PersonArchive({
                         data={data}
                         returnTo={returnTo}
                       />
-                      {place.coordinates ? (
-                        <Link className="archive-text-link" href={mapUrl}>
-                          Explore on the map <ArrowUpRight size={17} aria-hidden="true" />
+                      <div className="archive-place-links">
+                        <Link
+                          className="archive-text-link"
+                          href={withArchiveReturn(
+                            `/places/${encodeURIComponent(place.id)}?person=${encodeURIComponent(person.id)}`,
+                            returnTo,
+                          )}
+                        >
+                          About this place <ArrowUpRight size={17} aria-hidden="true" />
                         </Link>
-                      ) : (
+                        {place.coordinates && (
+                          <Link className="archive-text-link" href={mapUrl}>
+                            Explore on the map <ArrowUpRight size={17} aria-hidden="true" />
+                          </Link>
+                        )}
+                      </div>
+                      {!place.coordinates && (
                         <p className="archive-unmapped">
                           This relationship is documented; a map position is not yet available.
                         </p>
