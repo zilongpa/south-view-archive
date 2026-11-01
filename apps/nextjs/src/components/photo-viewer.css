@@ -271,6 +271,7 @@
 .photo-linked-metadata {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   column-gap: 20px;
   row-gap: 8px;
   font-size: 14px;
@@ -291,9 +292,10 @@
   color: var(--wine, #743444);
   text-decoration: underline;
   text-underline-offset: 3px;
-  min-height: 30px;
-  display: inline-flex;
-  align-items: center;
+  /* Inline-block keeps the link on the row's baseline; the padding keeps a 30px tap target. */
+  display: inline-block;
+  padding: 7px 0;
+  margin: -7px 0;
 }
 .photo-date-context {
   font-size: 13px;
