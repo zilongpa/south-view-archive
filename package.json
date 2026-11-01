@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @southview/db migrate",
     "db:backfill-places": "pnpm --filter @southview/db places:backfill",
+    "db:restore-persons": "pnpm --filter @southview/db persons:restore --",
     "db:seed": "pnpm --filter @southview/db seed",
     "reviewer:grant": "pnpm --filter @southview/services grant-reviewer",
     "storage:check": "pnpm --filter @southview/services check-storage"
