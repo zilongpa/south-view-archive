@@ -172,7 +172,6 @@ Main routes:
 - `/sign-in`, `/my-contributions`: optional Google sign-in and owned submissions.
 - `/admin/contributions`: separately authorized staff review. Signed-in reviewers also get a **Review desk** link in the navigation.
 - `/contributions/[id]`: published contribution, sources, and provider attribution.
-- `/about`: collection scope and reading guidance.
 
 Receipt tokens live in the URL **fragment**, not query parameters sent with the initial page request. The client proves access through a private request header; the database stores only a hash. A token authorizes one submission and should be kept private. Claiming a guest submission later requires both the receipt and a signed-in, verified email matching the contact.
 
