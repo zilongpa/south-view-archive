@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { loadEnvFile } from 'node:process';
 import { createStore } from '../src/connection';
 
@@ -23,15 +24,17 @@ if (!backupPath) {
   console.error('Usage: restore-persons --backup <file> [--env <dotenv file>] [--apply]');
   process.exit(1);
 }
+// pnpm runs this inside packages/db; paths are relative to where the command was typed.
+const base = process.env.INIT_CWD ?? process.cwd();
 const envPath = option('--env');
-if (envPath) loadEnvFile(envPath);
+if (envPath) loadEnvFile(resolve(base, envPath));
 const url = process.env.MIGRATION_DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING;
 if (!url) {
   console.error('Set MIGRATION_DATABASE_URL, or pass --env with a file that defines it.');
   process.exit(1);
 }
 const apply = args.includes('--apply');
-const backup = JSON.parse(readFileSync(backupPath, 'utf8')) as {
+const backup = JSON.parse(readFileSync(resolve(base, backupPath), 'utf8')) as {
   createdAt: string;
   archive: { persons: { id: string; data: Record<string, unknown> }[] };
 };
