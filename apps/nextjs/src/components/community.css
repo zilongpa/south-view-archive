@@ -519,6 +519,17 @@
   color: var(--wine);
   text-decoration: underline;
 }
+/* An icon sits beside the first line of the note, not above it. */
+.community-aside-note-icon {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 18px;
+}
+.community-aside-note-icon svg {
+  flex: none;
+  margin-top: 4px;
+}
 .community-notice {
   padding: 18px 20px;
   background: #eeede2;

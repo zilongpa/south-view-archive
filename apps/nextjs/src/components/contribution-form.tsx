@@ -1441,9 +1441,11 @@ export function ContributionForm({
           <Link href={`/sign-in?next=${encodeURIComponent(signInNext)}`}>Sign in</Link> if you would
           like to keep your contributions together.
         </p>
-        <p className="community-aside-note" style={{ marginTop: 18 }}>
-          <BookOpen size={16} aria-hidden="true" /> Memories retain their context. They are not
-          presented as independently documented facts.
+        <p className="community-aside-note community-aside-note-icon">
+          <BookOpen size={16} aria-hidden="true" />
+          <span>
+            Memories retain their context. They are not presented as independently documented facts.
+          </span>
         </p>
       </aside>
     </div>
