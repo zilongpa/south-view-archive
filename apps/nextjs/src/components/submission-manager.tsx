@@ -10,6 +10,7 @@ import {
   ImageOff,
   LoaderCircle,
   MessageSquarePlus,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   photoMetadataSchema,
@@ -329,15 +330,19 @@ export function SubmissionManager({ id }: { id?: string }) {
           <>
             <div className="community-session-bar">
               <span>Signed in as {session.user.email}</span>
-              <Link className="community-text-button" href="/contribute">
-                {copy.share}
-              </Link>
-              <button
-                className="community-text-button"
-                onClick={() => signOutCommunity().catch((failure) => setError(failure.message))}
-              >
-                Sign out
-              </button>
+              <span className="community-session-actions">
+                {session.reviewer && (
+                  <Link className="community-text-button" href="/admin/contributions">
+                    <ShieldCheck size={16} aria-hidden="true" /> {copy.reviewDesk}
+                  </Link>
+                )}
+                <button
+                  className="community-text-button"
+                  onClick={() => signOutCommunity().catch((failure) => setError(failure.message))}
+                >
+                  Sign out
+                </button>
+              </span>
             </div>
             {submissions.length ? (
               <div className="community-records">

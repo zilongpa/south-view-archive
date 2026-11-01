@@ -859,6 +859,16 @@
   font-size: 14px;
   color: var(--muted);
 }
+.community-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.community-session-actions .community-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .community-footer {
   border-top: 1px solid var(--line);
   padding: 28px 52px;
