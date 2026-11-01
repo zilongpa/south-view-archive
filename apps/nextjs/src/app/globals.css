@@ -1665,15 +1665,18 @@ svg {
   width: 100%;
   margin-top: 7px;
 }
-.archive-aside-note {
-  font:
-    italic 16px/1.7 Georgia,
-    serif;
+.archive-aside-help {
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--muted);
-  margin: 25px 0 12px;
+  margin: 14px 0 0;
 }
-.archive-aside > .archive-text-link {
+.archive-aside-credits {
   font-size: 11px;
+  color: #8b775c;
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid #d8cfbd;
 }
 .archive-footer {
   padding: 25px 40px;
@@ -2358,13 +2361,8 @@ svg {
 .archive-contributors {
   margin-top: 24px;
 }
-.archive-contributors h2 {
-  font:
-    22px Georgia,
-    serif;
-}
-.archive-contributors p {
-  font-size: 15px;
+.archive-contributors .archive-button {
+  margin-top: 12px;
 }
 .contribute-record {
   display: flex;

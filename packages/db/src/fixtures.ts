@@ -112,7 +112,7 @@ export const fixtureArchive: ArchiveData = validateArchive({
   places: [
     {
       id: 'lewis-south-view',
-      name: 'John Lewis · South-View',
+      name: 'John Lewis',
       summary:
         'The grave of John Lewis at South-View Cemetery. The official congressional biography records his interment here; the marker is a reference position without a section or plot number.',
       summaryCitations: [
@@ -132,7 +132,7 @@ export const fixtureArchive: ArchiveData = validateArchive({
     },
     {
       id: 'king-sr-south-view',
-      name: 'King family crypt · South-View',
+      name: 'King family crypt',
       summary:
         'The shared marble crypt of Martin Luther King Sr. and Alberta Williams King at South-View Cemetery, as recorded by Georgia’s official tourism guide.',
       summaryCitations: [{ sourceId: 'explore-georgia-south-view' }],
@@ -147,7 +147,7 @@ export const fixtureArchive: ArchiveData = validateArchive({
     },
     {
       id: 'herndon-south-view',
-      name: 'Alonzo Herndon · South-View',
+      name: 'Alonzo Herndon',
       summary:
         'The grave of Alonzo Herndon at South-View Cemetery. The Herndon Home National Historic Landmark nomination records his burial here; the marker is a reference position.',
       summaryCitations: [

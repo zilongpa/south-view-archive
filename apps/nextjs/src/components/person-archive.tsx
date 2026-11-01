@@ -556,20 +556,20 @@ export function PersonArchive({
                 </Link>
               </div>
               <div className="archive-aside-card archive-contributors">
-                <h2>Contributors to this record</h2>
-                {[...contributorIds].map((id) => (
-                  <p key={id}>{data.credits.find((credit) => credit.id === id)?.displayName}</p>
-                ))}
-                <EditEntryButton variant="link" label={copy.addToPage} />
+                <p className="archive-eyebrow">Know something about this life?</p>
+                <EditEntryButton variant="button" label={copy.editPage} />
+                <p className="archive-aside-help">
+                  Add a memory, a photograph, a place, or a correction right where it belongs.
+                  Reviewers approve it before it is public.
+                </p>
+                <p className="archive-aside-credits">
+                  Compiled by{' '}
+                  {[...contributorIds]
+                    .map((id) => data.credits.find((credit) => credit.id === id)?.displayName)
+                    .filter(Boolean)
+                    .join(', ')}
+                </p>
               </div>
-              <p className="archive-aside-note">
-                Know something about this life? Press {copy.editPage} to add a memory, a photograph,
-                a place, or a correction right where it belongs. Reviewers approve it before it is
-                public.
-              </p>
-              <Link className="archive-text-link" href="/about">
-                How to read this archive <ArrowUpRight size={16} aria-hidden="true" />
-              </Link>
             </aside>
           </div>
         </main>
