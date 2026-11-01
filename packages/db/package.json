@@ -17,6 +17,7 @@
     "seed": "tsx script/seed.ts",
     "db:migrate": "tsx script/migrate.ts",
     "places:backfill": "tsx script/backfill-places.ts",
+    "persons:restore": "tsx script/restore-persons.ts",
     "db:seed": "tsx script/seed.ts"
   },
   "dependencies": {
