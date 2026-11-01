@@ -1092,6 +1092,13 @@
   color: var(--muted);
   font-size: 12px;
 }
+/* The closing "A place not listed here" row has a single line: centre its box on that line. */
+.community-place-choices .community-check:last-child {
+  align-items: center;
+}
+.community-place-choices .community-check:last-child input {
+  margin-top: 0;
+}
 .community-person-hint {
   margin: -4px 0 4px;
   line-height: 1.5;
