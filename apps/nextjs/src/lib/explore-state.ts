@@ -6,6 +6,8 @@ export type ExploreState = {
   theme: string;
   person: string | null;
   place: string | null;
+  /** With a person open, which record the side panel shows: the person, or one of their places. */
+  panel: 'person' | 'place';
   embed: boolean;
   viewport: Viewport | null;
 };
@@ -27,6 +29,7 @@ export function parseExploreState(query: string): ExploreState {
     theme: (p.get('theme') ?? 'all').slice(0, 80),
     person: p.get('person'),
     place: p.get('place'),
+    panel: p.get('panel') === 'place' && p.get('person') && p.get('place') ? 'place' : 'person',
     embed: p.get('embed') === '1',
     viewport: hasView ? { lng, lat, zoom } : null,
   };
@@ -38,6 +41,7 @@ export function serializeExploreState(s: ExploreState, standalone = false) {
   if (s.theme !== 'all') p.set('theme', s.theme);
   if (s.person) p.set('person', s.person);
   if (s.place) p.set('place', s.place);
+  if (s.panel === 'place' && s.person && s.place) p.set('panel', 'place');
   if (s.embed && !standalone) p.set('embed', '1');
   if (s.viewport) {
     p.set('lng', s.viewport.lng.toFixed(5));
@@ -52,6 +56,7 @@ export const initialExploreState: ExploreState = {
   theme: 'all',
   person: null,
   place: null,
+  panel: 'person',
   embed: false,
   viewport: null,
 };

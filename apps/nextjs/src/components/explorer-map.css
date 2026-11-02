@@ -666,6 +666,73 @@
   }
 }
 
+/* A place reached from a person keeps a way back at the top of the panel. */
+.map-explorer .detail-top .detail-back {
+  width: auto;
+  height: 44px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -4px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--wine);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+}
+.map-explorer .detail-top .detail-back > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-explorer .detail-top .detail-back > svg {
+  flex: none;
+}
+.map-explorer .detail-top .detail-back:hover,
+.map-explorer .detail-top .detail-back:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.map-explorer .detail-location-note {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+.map-explorer .detail-location-note .precision-badge {
+  justify-self: start;
+}
+.map-explorer .detail-location-note .quiet-note {
+  margin: 0;
+}
+.map-explorer .place-person-entry {
+  margin-bottom: 10px;
+}
+.map-explorer .place-person-entry.is-origin {
+  margin: 0 -10px 12px;
+  padding: 10px 10px 2px;
+  background: #f7f2e8;
+  border-left: 3px solid var(--wine);
+  border-radius: 0 8px 8px 0;
+}
+.map-explorer .place-person-entry .place-person-origin {
+  margin: 0 0 8px;
+  font-size: 10px;
+}
+.map-explorer .place-person-entry .relation-note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #5a554b;
+  margin: 0 0 8px 2px;
+}
+.map-explorer .place-person-entry .place-person-row {
+  margin-bottom: 6px;
+}
+
 /* Place-centric panel: the place, then the people connected to it. */
 .map-explorer .detail-place {
   padding-bottom: 14px;

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useDetailResize } from './detail-resize';
 import {
   ArrowDownUp,
+  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   Check,
@@ -22,7 +23,7 @@ import {
 import './explorer-map.css';
 import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
-import { soleOccupant } from '@/lib/place-mode';
+import { placeConnections, precisionLabels, soleOccupant } from '@/lib/place-mode';
 import {
   searchArchive,
   scopeIncludesPlace,
@@ -45,6 +46,10 @@ import {
   type ExploreState,
   type Viewport,
 } from '@/lib/explore-state';
+// Pushed with a place opened from a person, so the panel's back control can use the real
+// history entry instead of adding one.
+type HistoryState = { backToPerson?: boolean } | null;
+
 const ArchiveMap = dynamic(() => import('./archive-map'), {
   ssr: false,
   loading: () => (
@@ -95,6 +100,8 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const liveState = useRef(state);
   liveState.current = state;
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The panel's back control pops a history entry; the panel keeps focus once it re-renders.
+  const focusPanelOnPop = useRef(false);
   useEffect(() => {
     const load = () => {
       const restored = parseExploreState(window.location.search);
@@ -103,6 +110,10 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       setFocusSelection(!!restored.person);
       setInitialized(true);
       setResetEpoch((n) => n + 1);
+      if (focusPanelOnPop.current) {
+        focusPanelOnPop.current = false;
+        requestAnimationFrame(() => detailRef.current?.focus({ preventScroll: true }));
+      }
     };
     load();
     window.addEventListener('popstate', load);
@@ -111,16 +122,21 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       if (copyTimer.current) clearTimeout(copyTimer.current);
     };
   }, []);
-  const update = useCallback((patch: Partial<ExploreState>, push = false) => {
-    // A final map move event can arrive while Next is transitioning to a record.
-    if (window.location.pathname !== '/explore') return;
-    const next = { ...liveState.current, ...patch };
-    liveState.current = next;
-    setState(next);
-    const url = serializeExploreState(next);
-    if (url !== window.location.pathname + window.location.search)
-      window.history[push ? 'pushState' : 'replaceState'](null, '', url);
-  }, []);
+  const update = useCallback(
+    (patch: Partial<ExploreState>, push = false, historyState: HistoryState = null) => {
+      // A final map move event can arrive while Next is transitioning to a record.
+      if (window.location.pathname !== '/explore') return;
+      const next = { ...liveState.current, ...patch };
+      liveState.current = next;
+      setState(next);
+      const url = serializeExploreState(next);
+      if (url !== window.location.pathname + window.location.search) {
+        if (push) window.history.pushState(historyState, '', url);
+        else window.history.replaceState(window.history.state, '', url);
+      }
+    },
+    [],
+  );
   const previewController = useMemo(
     () =>
       createPreviewController<PreviewTarget>((target) => {
@@ -135,11 +151,16 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
           // Hover immediately changes the open record, but never moves the camera, steals focus,
           // or adds browser history entries. Keep it readable after leaving the pin.
           triggerRef.current = target.anchor;
+          const patch: Partial<ExploreState> =
+            liveState.current.panel === 'place' && target.placeId
+              ? { place: selection.place }
+              : { ...selection, panel: 'person' };
           if (
-            liveState.current.person !== selection.person ||
-            liveState.current.place !== selection.place
+            liveState.current.person !== (patch.person ?? liveState.current.person) ||
+            liveState.current.place !== patch.place ||
+            liveState.current.panel !== (patch.panel ?? liveState.current.panel)
           )
-            update(selection);
+            update(patch);
           setPreviewTarget(null);
         } else {
           setPreviewTarget({ ...target, placeId: selection.place ?? undefined });
@@ -179,7 +200,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   useEffect(() => {
     if (detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
     setCopied(false);
-  }, [state.person, state.place]);
+  }, [state.person, state.place, state.panel]);
   const results = useMemo(
     () => searchArchive(archive, { q: state.q, theme: state.theme, scope: state.scope }),
     [archive, state.q, state.theme, state.scope],
@@ -219,16 +240,14 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       p.id === (state.place ?? selectedRelations[0]?.placeId) &&
       selectedRelations.some((r) => r.placeId === p.id),
   );
-  // A marker selects the place itself; the panel then lists everyone connected to it.
-  const placeOnly = selected ? null : (archive.places.find((p) => p.id === state.place) ?? null);
-  const placePeople = placeOnly
-    ? archive.relations
-        .filter((r) => r.placeId === placeOnly.id)
-        .flatMap((relation) => {
-          const person = archive.people.find((p) => p.id === relation.personId);
-          return person ? [{ relation, person }] : [];
-        })
-    : [];
+  // A marker selects the place itself; the panel then lists everyone connected to it. With a
+  // person open, their places open the same way, and the panel keeps a way back to the person.
+  const placeOnly =
+    !selected || state.panel === 'place'
+      ? (archive.places.find((p) => p.id === state.place) ?? null)
+      : null;
+  const placeOrigin = placeOnly && selected ? selected : undefined;
+  const placePeople = placeOnly ? placeConnections(archive, placeOnly.id, placeOrigin?.id) : [];
   const hasSelection = !!selected || !!placeOnly;
   const preview = archive.people.find((p) => p.id === previewTarget?.personId);
   const previewPlace =
@@ -246,7 +265,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       if (!archive.places.some((p) => p.id === placeId)) return;
       previewController.clear();
       triggerRef.current = document.activeElement as HTMLElement;
-      update({ person: null, place: placeId, viewport: null }, true);
+      update({ person: null, place: placeId, panel: 'person', viewport: null }, true);
       setResetEpoch((n) => n + 1);
       setFocusSelection(true);
       if (window.matchMedia('(max-width: 760px)').matches) setShowResults(false);
@@ -254,13 +273,52 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     },
     [archive, update, previewController],
   );
+  // One of an open person's places, shown as a place. The browser's Back button and the panel's
+  // own back control both return to the person: the push remembers where it came from.
+  const openPlace = useCallback(
+    (placeId: string, personId: string) => {
+      const place = archive.places.find((p) => p.id === placeId);
+      if (!place) return;
+      previewController.clear();
+      triggerRef.current = document.activeElement as HTMLElement;
+      update(
+        {
+          // A place outside the current view brings its view along.
+          scope: scopeIncludesPlace(liveState.current.scope, place.scope)
+            ? liveState.current.scope
+            : place.scope,
+          person: personId,
+          place: placeId,
+          panel: 'place',
+          viewport: null,
+        },
+        true,
+        { backToPerson: true },
+      );
+      setResetEpoch((n) => n + 1);
+      setFocusSelection(true);
+      if (window.matchMedia('(max-width: 760px)').matches) setShowResults(false);
+      requestAnimationFrame(() => detailRef.current?.focus({ preventScroll: true }));
+    },
+    [archive, update, previewController],
+  );
+  const backToPerson = useCallback(() => {
+    previewController.clear();
+    if ((window.history.state as HistoryState)?.backToPerson) {
+      focusPanelOnPop.current = true;
+      window.history.back();
+      return;
+    }
+    update({ panel: 'person' }, true);
+    requestAnimationFrame(() => detailRef.current?.focus({ preventScroll: true }));
+  }, [update, previewController]);
   const selectPerson = useCallback(
     (personId: string, placeId?: string) => {
       const selection = previewSelection(archive, liveState.current.scope, { personId, placeId });
       if (!selection) return;
       previewController.clear();
       triggerRef.current = document.activeElement as HTMLElement;
-      update({ ...selection, viewport: null }, true);
+      update({ ...selection, panel: 'person', viewport: null }, true);
       setResetEpoch((n) => n + 1);
       setFocusSelection(true);
       if (window.matchMedia('(max-width: 760px)').matches) setShowResults(false);
@@ -270,7 +328,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   );
   const closeDetail = useCallback(() => {
     previewController.clear();
-    update({ person: null, place: null }, true);
+    update({ person: null, place: null, panel: 'person' }, true);
     requestAnimationFrame(() => {
       if (triggerRef.current?.isConnected) triggerRef.current.focus({ preventScroll: true });
       else document.getElementById('archive-search')?.focus();
@@ -280,13 +338,14 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (liveState.current.person || liveState.current.place) closeDetail();
+        if (liveState.current.panel === 'place' && liveState.current.person) backToPerson();
+        else if (liveState.current.person || liveState.current.place) closeDetail();
         else previewController.clear();
       }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [closeDetail, previewController]);
+  }, [backToPerson, closeDetail, previewController]);
   const changeScope = (scope: Scope) => {
     previewController.clear();
     setFocusSelection(false);
@@ -298,7 +357,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     const rel =
       available.find((r) => archive.places.some((p) => p.id === r.placeId && p.scope === scope)) ??
       available[0];
-    update({ scope, viewport: null, place: rel?.placeId ?? null }, true);
+    update({ scope, viewport: null, place: rel?.placeId ?? null, panel: 'person' }, true);
     setResetEpoch((n) => n + 1);
   };
   const onViewport = useCallback(
@@ -307,13 +366,13 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     },
     [archive, update],
   );
-  const recordPath = selected
-    ? `/people/${selected.id}`
-    : placeOnly
-      ? `/places/${placeOnly.id}`
+  const recordPath = placeOnly
+    ? `/places/${placeOnly.id}`
+    : selected
+      ? `/people/${selected.id}`
       : '';
   const detailHref = recordPath
-    ? `${recordPath}?from=${encodeURIComponent(serializeExploreState(state))}`
+    ? `${recordPath}?${placeOrigin ? `person=${encodeURIComponent(placeOrigin.id)}&` : ''}from=${encodeURIComponent(serializeExploreState(state))}`
     : '';
   async function copyLink(kind: 'map' | 'person') {
     const origin = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
@@ -517,14 +576,16 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   people={people}
                   relations={results.relations}
                   scope={state.scope}
-                  selectedPlaceId={selectedPlace?.id ?? null}
+                  selectedPlaceId={placeOnly?.id ?? selectedPlace?.id ?? null}
                   selectedPersonId={selected?.id ?? null}
                   viewport={state.viewport}
                   resetEpoch={resetEpoch}
                   focusSelection={focusSelection}
                   onSelect={(_personId, placeId) => {
                     const occupant = soleOccupant(archive, placeId);
-                    if (occupant) selectPerson(occupant, placeId);
+                    if (selected && (!occupant || occupant === selected.id))
+                      openPlace(placeId, selected.id);
+                    else if (occupant) selectPerson(occupant, placeId);
                     else selectPlace(placeId);
                   }}
                   onPreview={onPreview}
@@ -553,12 +614,22 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   ref={detailRef}
                   className={`detail-panel ${detailResize.panelClass}`}
                   tabIndex={-1}
-                  aria-label={`${selected ? selected.name : placeOnly!.name} preview`}
+                  aria-label={`${placeOnly ? placeOnly.name : selected!.name} preview`}
                 >
                   {detailResize.handle}
                   <div className="detail-top">
-                    <span className="eyebrow">FROM THE COLLECTION</span>
-                    <button onClick={closeDetail} aria-label="Close person preview">
+                    {placeOrigin ? (
+                      <button type="button" className="detail-back" onClick={backToPerson}>
+                        <ArrowLeft size={16} aria-hidden="true" />
+                        <span>Back to {displayPersonName(placeOrigin.name)}</span>
+                      </button>
+                    ) : (
+                      <span className="eyebrow">FROM THE COLLECTION</span>
+                    )}
+                    <button
+                      onClick={closeDetail}
+                      aria-label={placeOnly ? 'Close place preview' : 'Close person preview'}
+                    >
                       <X size={19} />
                     </button>
                   </div>
@@ -568,7 +639,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                         <div className="detail-place">
                           <span className="theme-label">
                             {placeOnly.scope === 'cemetery'
-                              ? 'Grave marker · South-View'
+                              ? 'Grave marker · South-View Cemetery'
                               : 'Place · Atlanta'}
                           </span>
                           <h2>{placeOnly.name}</h2>
@@ -579,8 +650,17 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                             placePeople[0]?.relation.description ||
                             placeOnly.locationNote}
                         </p>
-                        <section className="connected-places">
-                          <h3>
+                        <div className="detail-location-note">
+                          <span className={`precision-badge precision-${placeOnly.precision}`}>
+                            {precisionLabels[placeOnly.precision]}
+                          </span>
+                          {placeOnly.locationNote &&
+                            (placeOnly.summary || placePeople[0]?.relation.description) && (
+                              <p className="quiet-note">{placeOnly.locationNote}</p>
+                            )}
+                        </div>
+                        <section className="connected-places" aria-labelledby="panel-place-people">
+                          <h3 id="panel-place-people">
                             <UserRound size={16} />
                             {placeOnly.scope === 'cemetery'
                               ? 'Remembered here'
@@ -593,39 +673,47 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                               No person has been connected to this place yet.
                             </p>
                           )}
-                          {placePeople.map(({ person, relation }) => (
-                            <button
-                              type="button"
-                              className="place-person-row"
-                              key={relation.id}
-                              onClick={() => selectPerson(person.id, placeOnly.id)}
-                            >
-                              <Monogram person={person} />
-                              <span>
-                                <strong>{displayPersonName(person.name)}</strong>
-                                <small>
-                                  {person.birthYear
-                                    ? `${person.birthYear} — ${person.deathYear ?? ''} · `
-                                    : ''}
-                                  {relation.label}
-                                </small>
-                              </span>
-                              <ArrowRight size={15} />
-                            </button>
-                          ))}
-                          <p className="quiet-note">
-                            {placeOnly.precision === 'reference'
-                              ? 'Reference position, not independently verified.'
-                              : placeOnly.precision === 'address'
-                                ? 'Address-level position.'
-                                : placeOnly.precision === 'verified'
-                                  ? 'Verified position.'
-                                  : 'Not yet mapped.'}
-                          </p>
+                          {placePeople.map(({ person, relation }) => {
+                            const origin = person.id === placeOrigin?.id;
+                            return (
+                              <article
+                                className={`place-person-entry ${origin ? 'is-origin' : ''}`}
+                                key={relation.id}
+                              >
+                                {origin && (
+                                  <p className="place-person-origin">
+                                    The person whose record led you here
+                                  </p>
+                                )}
+                                <button
+                                  type="button"
+                                  className="place-person-row"
+                                  onClick={() =>
+                                    origin ? backToPerson() : selectPerson(person.id, placeOnly.id)
+                                  }
+                                >
+                                  <Monogram person={person} />
+                                  <span>
+                                    <strong>{displayPersonName(person.name)}</strong>
+                                    <small>
+                                      {person.birthYear
+                                        ? `${person.birthYear} — ${person.deathYear ?? ''} · `
+                                        : ''}
+                                      {relation.label}
+                                    </small>
+                                  </span>
+                                  {origin ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
+                                </button>
+                                {relation.description && (
+                                  <p className="relation-note">{relation.description}</p>
+                                )}
+                              </article>
+                            );
+                          })}
                         </section>
                       </>
                     )}
-                    {selected && (
+                    {selected && !placeOnly && (
                       <>
                         <div className="detail-person">
                           <Monogram person={selected} large />
@@ -672,21 +760,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                                     aria-current={
                                       place.id === selectedPlace?.id ? 'location' : undefined
                                     }
-                                    onClick={() => {
-                                      setFocusSelection(true);
-                                      // A place outside the current view brings its view along.
-                                      update(
-                                        {
-                                          scope: scopeIncludesPlace(state.scope, place.scope)
-                                            ? state.scope
-                                            : place.scope,
-                                          place: place.id,
-                                          viewport: null,
-                                        },
-                                        true,
-                                      );
-                                      setResetEpoch((n) => n + 1);
-                                    }}
+                                    onClick={() => openPlace(place.id, selected.id)}
                                   >
                                     <strong>{place.name}</strong>
                                     <ArrowUpRight size={15} />

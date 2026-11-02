@@ -6,13 +6,7 @@ import { ProvidedBy } from './provided-by';
 import { SiteNavigation } from './site-navigation';
 import { withArchiveReturn } from '@/lib/archive-return';
 import { displayPersonName } from '@/lib/person-name';
-
-const precisionLabels: Record<Place['precision'], string> = {
-  reference: 'Reference position · unverified',
-  address: 'Approximate address position',
-  verified: 'Verified position',
-  unmapped: 'Not yet mapped',
-};
+import { placeConnections, precisionLabels } from '@/lib/place-mode';
 
 function years(person: Person) {
   if (person.birthYear) return `${person.birthYear} — ${person.deathYear ?? ''}`;
@@ -46,15 +40,7 @@ export function PlaceArchive({
   canonicalUrl: string;
   fromPerson?: Person;
 }) {
-  const connections = data.relations
-    .filter((relation) => relation.placeId === place.id)
-    .flatMap((relation) => {
-      const person = data.people.find((item) => item.id === relation.personId);
-      return person ? [{ relation, person }] : [];
-    })
-    .sort(
-      (a, b) => Number(b.person.id === fromPerson?.id) - Number(a.person.id === fromPerson?.id),
-    );
+  const connections = placeConnections(data, place.id, fromPerson?.id);
   const personHref = (person: Person) =>
     withArchiveReturn(`/people/${encodeURIComponent(person.id)}`, returnTo);
   const citations = [
