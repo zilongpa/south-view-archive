@@ -3,11 +3,26 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapInstance, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Compass, Focus, LocateFixed, MapPin, Minus, Plus, RefreshCw } from 'lucide-react';
+import {
+  Compass,
+  Focus,
+  LoaderCircle,
+  LocateFixed,
+  MapPin,
+  Minus,
+  Plus,
+  RefreshCw,
+} from 'lucide-react';
 import type { Person, PersonPlace, Place, Scope } from '@southview/validators';
 import type { Viewport } from '@/lib/explore-state';
 import { createMarkerHoverController, type PreviewTarget } from '@/lib/explore-preview';
-import { cemeteryArea, cemeteryCenter, mapPadding, overviewBounds } from '@/lib/cemetery-area';
+import {
+  cemeteryArea,
+  cemeteryBounds,
+  cemeteryCenter,
+  mapPadding,
+  overviewBounds,
+} from '@/lib/cemetery-area';
 
 type Props = {
   places: Place[];
@@ -56,6 +71,51 @@ export default function ArchiveMap(props: Props) {
   const [ready, setReady] = useState(false);
   const [retry, setRetry] = useState(0);
   const [tileWarning, setTileWarning] = useState(false);
+  // "My location": offered once the browser is known to provide positions (decided after
+  // mount so the server and the first render agree). The map centres there; no marker is kept.
+  const [canLocate, setCanLocate] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState('');
+  useEffect(() => {
+    setCanLocate('geolocation' in navigator && window.isSecureContext);
+  }, []);
+  const locate = () => {
+    const map = mapRef.current;
+    if (!map || locating) return;
+    setLocating(true);
+    setLocateError('');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLocating(false);
+        const live = mapRef.current;
+        if (!live) return;
+        // Inside the cemetery, close enough to tell graves apart; anywhere else, a neighbourhood
+        // view, which also switches the map to its Atlanta places.
+        const atCemetery =
+          coords.longitude >= cemeteryBounds[0][0] &&
+          coords.longitude <= cemeteryBounds[1][0] &&
+          coords.latitude >= cemeteryBounds[0][1] &&
+          coords.latitude <= cemeteryBounds[1][1];
+        live.easeTo(
+          {
+            center: [coords.longitude, coords.latitude],
+            zoom: atCemetery ? 17 : 14,
+            duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 600,
+          },
+          { autoScope: true },
+        );
+      },
+      (failure) => {
+        setLocating(false);
+        setLocateError(
+          failure.code === failure.PERMISSION_DENIED
+            ? 'Location access was refused, so the map stays where it is.'
+            : 'Your position could not be found right now.',
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
+  };
   const refreshMarkers = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -565,19 +625,55 @@ export default function ArchiveMap(props: Props) {
         >
           <Minus size={19} />
         </button>
+        <span aria-hidden="true" />
+        {canLocate && (
+          <button
+            onClick={locate}
+            disabled={locating}
+            aria-label="Centre the map on my location"
+            title="Centre the map on my location"
+          >
+            {locating ? (
+              <LoaderCircle size={19} className="map-spin" aria-hidden="true" />
+            ) : (
+              <LocateFixed size={19} aria-hidden="true" />
+            )}
+          </button>
+        )}
+        <button
+          onClick={props.onReturnToCemetery}
+          aria-label="Centre the map on South-View Cemetery"
+          title="Centre the map on South-View Cemetery"
+        >
+          {/* A headstone: the archive's own mark for the cemetery. */}
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 21V10a6 6 0 0 1 12 0v11" />
+            <path d="M3.5 21h17" />
+            <path d="M12 8v6" />
+            <path d="M9.5 10.5h5" />
+          </svg>
+        </button>
       </div>
       <div className="map-north" aria-hidden="true">
         <Compass size={28} strokeWidth={1} />
         <span>N</span>
       </div>
-      <button
-        className="map-home"
-        onClick={props.onReturnToCemetery}
-        aria-label="Return to South-View Cemetery"
-        title="Return to South-View Cemetery"
-      >
-        <LocateFixed size={18} aria-hidden="true" /> South-View
-      </button>
+      {locateError && (
+        <div className="map-warning" role="status">
+          {locateError}
+          <button onClick={() => setLocateError('')}>Dismiss</button>
+        </div>
+      )}
       <div className="map-caption" aria-label="Map legend">
         {props.focusPerson && (
           <button
