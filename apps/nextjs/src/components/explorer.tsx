@@ -275,22 +275,26 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const placePeople = placeOnly ? placeConnections(archive, placeOnly.id, placeOrigin?.id) : [];
   const hasSelection = !!selected || !!placeOnly;
   // "Only this person" / "Only this place": the map keeps the open record's places and drops
-  // every other marker. For a person, their places; for a place, the place itself and every
-  // place of the people connected to it. The list and search are untouched, so another
-  // record is always one click away.
+  // every other marker. For a person, their places; for a place opened on its own, the place
+  // and every place of the people connected to it. A place opened from a person's record keeps
+  // the lock on that person, so stepping through their places never changes what is shown.
+  // The list and search are untouched, so another record is always one click away.
+  const lockedPlace = placeOnly && !placeOrigin ? placeOnly : null;
   const focusedPlaceIds = (() => {
     if (!focusOnly || !hasSelection) return null;
-    const people = placeOnly
-      ? new Set(archive.relations.filter((r) => r.placeId === placeOnly.id).map((r) => r.personId))
+    const people = lockedPlace
+      ? new Set(
+          archive.relations.filter((r) => r.placeId === lockedPlace.id).map((r) => r.personId),
+        )
       : new Set([selected!.id]);
     const ids = new Set(
       archive.relations.filter((r) => people.has(r.personId)).map((r) => r.placeId),
     );
-    if (placeOnly) ids.add(placeOnly.id);
+    if (lockedPlace) ids.add(lockedPlace.id);
     return ids;
   })();
-  const focusSubject = placeOnly
-    ? { name: placeOnly.name, kind: 'place' as const }
+  const focusSubject = lockedPlace
+    ? { name: lockedPlace.name, kind: 'place' as const }
     : selected
       ? { name: displayPersonName(selected.name), kind: 'person' as const }
       : null;
