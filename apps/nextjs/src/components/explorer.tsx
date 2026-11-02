@@ -50,6 +50,7 @@ import {
 // history entry instead of adding one.
 type HistoryState = { backToPerson?: boolean } | null;
 const focusStorageKey = 'southview.explore.focus-person';
+type FocusSubject = { kind: 'person' | 'place'; id: string };
 
 const ArchiveMap = dynamic(() => import('./archive-map'), {
   ssr: false,
@@ -120,6 +121,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       return !value;
     });
   }, []);
+  // The record the filter is locked to. It is set from whatever is open when the filter is on,
+  // and survives following links from that record (a person's places, a place's people), so the
+  // map keeps one life or one place in view while the panel steps through its connections.
+  // Picking a record afresh, from the list or from an empty map, moves the lock to it.
+  const [focusLock, setFocusLock] = useState<FocusSubject | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The panel's back control pops a history entry; the panel keeps focus once it re-renders.
   const focusPanelOnPop = useRef(false);
@@ -274,30 +280,53 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const placeOrigin = placeOnly && selected ? selected : undefined;
   const placePeople = placeOnly ? placeConnections(archive, placeOnly.id, placeOrigin?.id) : [];
   const hasSelection = !!selected || !!placeOnly;
-  // "Only this person" / "Only this place": the map keeps the open record's places and drops
-  // every other marker. For a person, their places; for a place opened on its own, the place
-  // and every place of the people connected to it. A place opened from a person's record keeps
-  // the lock on that person, so stepping through their places never changes what is shown.
-  // The list and search are untouched, so another record is always one click away.
-  const lockedPlace = placeOnly && !placeOrigin ? placeOnly : null;
+  // "Only this person" / "Only this place": the map keeps one record's places and drops every
+  // other marker. For a person, their places; for a place, the place and every place of the
+  // people connected to it. The list and search are untouched, so another record is always one
+  // click away.
+  const shown: FocusSubject | null = placeOnly
+    ? { kind: 'place', id: placeOnly.id }
+    : selected
+      ? { kind: 'person', id: selected.id }
+      : null;
+  const lockStillExists =
+    focusLock &&
+    (focusLock.kind === 'person' ? archive.people : archive.places).some(
+      (item) => item.id === focusLock.id,
+    );
+  const focusSubject = focusOnly && hasSelection ? (lockStillExists ? focusLock : shown) : null;
+  useEffect(() => {
+    // Lock to what is open the moment the filter applies to something; let go when nothing
+    // is open or the filter is off.
+    if (!focusOnly || !shown) setFocusLock(null);
+    else if (!lockStillExists) setFocusLock(shown);
+  }, [focusOnly, shown?.kind, shown?.id, lockStillExists]); // eslint-disable-line react-hooks/exhaustive-deps
   const focusedPlaceIds = (() => {
-    if (!focusOnly || !hasSelection) return null;
-    const people = lockedPlace
-      ? new Set(
-          archive.relations.filter((r) => r.placeId === lockedPlace.id).map((r) => r.personId),
-        )
-      : new Set([selected!.id]);
+    if (!focusSubject) return null;
+    const people =
+      focusSubject.kind === 'place'
+        ? new Set(
+            archive.relations.filter((r) => r.placeId === focusSubject.id).map((r) => r.personId),
+          )
+        : new Set([focusSubject.id]);
     const ids = new Set(
       archive.relations.filter((r) => people.has(r.personId)).map((r) => r.placeId),
     );
-    if (lockedPlace) ids.add(lockedPlace.id);
+    if (focusSubject.kind === 'place') ids.add(focusSubject.id);
     return ids;
   })();
-  const focusSubject = lockedPlace
-    ? { name: lockedPlace.name, kind: 'place' as const }
-    : selected
-      ? { name: displayPersonName(selected.name), kind: 'person' as const }
-      : null;
+  const focusLabel = (subject: FocusSubject) =>
+    subject.kind === 'place'
+      ? (archive.places.find((p) => p.id === subject.id)?.name ?? '')
+      : displayPersonName(archive.people.find((p) => p.id === subject.id)?.name ?? '');
+  const focusControl = shown
+    ? {
+        name: focusLabel(focusSubject ?? shown),
+        kind: (focusSubject ?? shown).kind,
+        only: !!focusSubject,
+        onToggle: toggleFocusOnly,
+      }
+    : undefined;
   const mapPlaces = focusedPlaceIds
     ? results.places.filter((p) => focusedPlaceIds.has(p.id))
     : results.places;
@@ -319,6 +348,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
     (placeId: string) => {
       if (!archive.places.some((p) => p.id === placeId)) return;
       previewController.clear();
+      setFocusLock(null); // a fresh pick from the map: the filter follows it
       triggerRef.current = document.activeElement as HTMLElement;
       update({ person: null, place: placeId, panel: 'person', viewport: null }, true);
       setResetEpoch((n) => n + 1);
@@ -372,6 +402,9 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
       const selection = previewSelection(archive, liveState.current.scope, { personId, placeId });
       if (!selection) return;
       previewController.clear();
+      // From the list, a fresh pick moves the filter; from a place's panel or a marker, the
+      // person is one of the open record's connections and the lock stays.
+      if (!placeId) setFocusLock(null);
       triggerRef.current = document.activeElement as HTMLElement;
       update({ ...selection, panel: 'person', viewport: null }, true);
       setResetEpoch((n) => n + 1);
@@ -383,6 +416,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   );
   const closeDetail = useCallback(() => {
     previewController.clear();
+    setFocusLock(null);
     update({ person: null, place: null, panel: 'person' }, true);
     requestAnimationFrame(() => {
       if (triggerRef.current?.isConnected) triggerRef.current.focus({ preventScroll: true });
@@ -648,11 +682,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   onViewport={onViewport}
                   onFailure={() => setShowResults(true)}
                   resultsOpen={showResults}
-                  focus={
-                    focusSubject
-                      ? { ...focusSubject, only: focusOnly, onToggle: toggleFocusOnly }
-                      : undefined
-                  }
+                  focus={focusControl}
                   onReturnToCemetery={() => changeScope('cemetery')}
                 />
               )}
