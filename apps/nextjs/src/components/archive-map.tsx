@@ -12,6 +12,7 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import type { Person, PersonPlace, Place, Scope } from '@southview/validators';
 import type { Viewport } from '@/lib/explore-state';
@@ -79,6 +80,12 @@ export default function ArchiveMap(props: Props) {
   useEffect(() => {
     setCanLocate('geolocation' in navigator && window.isSecureContext);
   }, []);
+  // The notice is a passing toast: it clears itself after a few seconds.
+  useEffect(() => {
+    if (!locateError) return;
+    const timer = window.setTimeout(() => setLocateError(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [locateError]);
   const locate = () => {
     const map = mapRef.current;
     if (!map || locating) return;
@@ -109,8 +116,8 @@ export default function ArchiveMap(props: Props) {
         setLocating(false);
         setLocateError(
           failure.code === failure.PERMISSION_DENIED
-            ? 'Location access was refused, so the map stays where it is.'
-            : 'Your position could not be found right now.',
+            ? 'Location access refused.'
+            : 'Position not found.',
         );
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
@@ -669,11 +676,22 @@ export default function ArchiveMap(props: Props) {
         <span>N</span>
       </div>
       {locateError && (
-        <div className="map-warning" role="status">
+        <div className="map-warning map-toast" role="status">
           {locateError}
-          <button onClick={() => setLocateError('')}>Dismiss</button>
+          <button onClick={() => setLocateError('')} aria-label="Dismiss">
+            <X size={14} aria-hidden="true" />
+          </button>
         </div>
       )}
+      <div className="map-credit">
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+          © OpenStreetMap
+        </a>
+        {' · '}
+        <a href="https://openfreemap.org" target="_blank" rel="noreferrer">
+          OpenFreeMap
+        </a>
+      </div>
       <div className="map-caption" aria-label="Map legend">
         {props.focus && (
           <button
