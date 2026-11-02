@@ -56,12 +56,66 @@ type PlaceDraft = {
   relationship: string;
   summary: string;
 };
+type PersonFields = {
+  name: string;
+  aliases: string;
+  birthYear: string;
+  deathYear: string;
+  themes: string;
+  summary: string;
+};
+type PersonPatch = NonNullable<ReviewInput['personPatch']>;
+/** The person record as stored; a new person starts from the defaults publication would use. */
+function personFieldsFor(personId: string, archive: ArchiveData): PersonFields {
+  const person = archive.people.find((item) => item.id === personId);
+  return {
+    name: person?.name ?? '',
+    aliases: person?.aliases.join(', ') ?? '',
+    birthYear: person?.birthYear ? String(person.birthYear) : '',
+    deathYear: person?.deathYear ? String(person.deathYear) : '',
+    themes: person ? person.themes.join(', ') : 'Community',
+    summary: person?.summary ?? '',
+  };
+}
+const splitList = (value: string) =>
+  value
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+/** Only fields the reviewer changed are sent, so untouched values stay exactly as stored. */
+function personPatchFor(
+  fields: PersonFields,
+  initial: PersonFields,
+  existing: boolean,
+): PersonPatch | undefined {
+  const patch: PersonPatch = {};
+  if (existing && fields.name.trim() && fields.name.trim() !== initial.name)
+    patch.name = fields.name.trim();
+  if (fields.aliases !== initial.aliases) patch.aliases = splitList(fields.aliases);
+  if (fields.birthYear.trim() !== initial.birthYear)
+    patch.birthYear = fields.birthYear.trim() ? Number(fields.birthYear) : null;
+  if (fields.deathYear.trim() !== initial.deathYear)
+    patch.deathYear = fields.deathYear.trim() ? Number(fields.deathYear) : null;
+  if (fields.themes !== initial.themes) patch.themes = splitList(fields.themes);
+  if (fields.summary.trim() && fields.summary.trim() !== initial.summary)
+    patch.summary = fields.summary.trim();
+  return Object.keys(patch).length ? patch : undefined;
+}
+const personFieldLabels: Record<keyof PersonPatch, string> = {
+  name: 'name',
+  aliases: 'other names',
+  birthYear: 'birth year',
+  deathYear: 'death year',
+  themes: 'themes',
+  summary: 'summary',
+};
 /** In-page additions say where they belong; the desk starts there so one click publishes them. */
 function defaultApplyTo(record: SubmissionRecord): ReviewInput['applyTo'] {
   const placement = record.input.placement;
   if (!placement || record.input.kind === 'memory' || record.status === 'published') return 'entry';
   if (placement.section === 'biography') return 'biography';
   if (placement.section === 'places') return 'place';
+  if (placement.section === 'portrait') return 'portrait';
   return 'entry';
 }
 function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraft {
@@ -134,6 +188,10 @@ function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['ap
     return placement.proposedCoordinates
       ? 'The contributor marked this place on the map. Its position is filled in below for you to confirm.'
       : 'The contributor added this as a place on the person page. Its details are filled in below.';
+  if (placement.section === 'portrait')
+    return applyTo === 'portrait'
+      ? 'The contributor offered this photograph as a portrait. Publishing as the portrait puts the first approved photograph at the top of the person page.'
+      : 'The contributor offered this photograph as a portrait; the current choice keeps it as a separate entry.';
   return '';
 }
 
@@ -484,13 +542,27 @@ function ReviewEditor({
     })),
   );
   const [place, setPlace] = useState(() => initialPlace(record, archive));
+  const [personFields, setPersonFields] = useState(() =>
+    personFieldsFor(record.input.personId ?? '', archive),
+  );
+  const initialPersonFields = useRef(personFields);
+  const personPatch = personPatchFor(personFields, initialPersonFields.current, !!draft.personId);
+  const themeOptions = [...new Set(archive.people.flatMap((person) => person.themes))];
   const placementHint = placementExplanation(record, applyTo);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('submission');
   const [confirming, setConfirming] = useState(false);
-  const snapshot = JSON.stringify({ draft, applyTo, sourceIds, photoIds, photoEdits, place });
+  const snapshot = JSON.stringify({
+    draft,
+    applyTo,
+    sourceIds,
+    photoIds,
+    photoEdits,
+    place,
+    personFields,
+  });
   const initialSnapshot = useRef(snapshot);
   const dirty = snapshot !== initialSnapshot.current;
   useEffect(() => {
@@ -509,6 +581,17 @@ function ReviewEditor({
   function edit<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
     setDraft((previous) => ({ ...previous, [key]: value }));
     setChecked(false);
+  }
+  function editPerson<K extends keyof PersonFields>(key: K, value: string) {
+    setPersonFields((previous) => ({ ...previous, [key]: value }));
+    setChecked(false);
+  }
+  // Choosing another person shows that record's current values, with nothing marked as changed.
+  function choosePerson(id: string) {
+    edit('personId', id);
+    const next = personFieldsFor(id, archive);
+    initialPersonFields.current = next;
+    setPersonFields(next);
   }
   function choosePlace(id: string) {
     const chosen = archive.places.find((place) => place.id === id);
@@ -554,6 +637,19 @@ function ReviewEditor({
       return;
     }
     // Extra archive sources are optional: publication always cites the contribution itself.
+    if (action === 'publish' && applyTo === 'portrait' && photoIds.length === 0) {
+      setError('Approve the photograph that should become the portrait.');
+      return;
+    }
+    if (
+      action === 'publish' &&
+      [personFields.birthYear, personFields.deathYear].some(
+        (year) => year.trim() && !/^\d{1,4}$/.test(year.trim()),
+      )
+    ) {
+      setError('Enter birth and death years as years, or leave them blank.');
+      return;
+    }
     if (
       action === 'publish' &&
       applyTo === 'place' &&
@@ -581,6 +677,7 @@ function ReviewEditor({
             approvedPhotoIds: photoIds,
             photoEdits: photoEdits.filter((photo) => photoIds.includes(photo.id)),
             applyTo,
+            ...(personPatch ? { personPatch } : {}),
             ...(applyTo === 'place'
               ? {
                   placePatch: {
@@ -747,7 +844,7 @@ function ReviewEditor({
                 label="Person record"
                 options={archive.people}
                 value={draft.personId ? [draft.personId] : []}
-                onChange={(ids) => edit('personId', ids[0] ?? '')}
+                onChange={(ids) => choosePerson(ids[0] ?? '')}
                 placeholder="Search names or alternate names…"
                 emptyLabel="Create a new person record"
               />
@@ -762,6 +859,85 @@ function ReviewEditor({
                   />
                 </label>
               )}
+              <details className="story-context-details">
+                <summary>
+                  Person record details
+                  {personPatch
+                    ? ` · changing ${Object.keys(personPatch)
+                        .map((key) => personFieldLabels[key as keyof PersonPatch])
+                        .join(', ')}`
+                    : ''}
+                </summary>
+                <div className="community-fields">
+                  {draft.personId && (
+                    <label className="community-field">
+                      <span>Public name</span>
+                      <input
+                        value={personFields.name}
+                        onChange={(event) => editPerson('name', event.target.value)}
+                        maxLength={160}
+                      />
+                    </label>
+                  )}
+                  <label className="community-field">
+                    <span>Other names</span>
+                    <input
+                      value={personFields.aliases}
+                      onChange={(event) => editPerson('aliases', event.target.value)}
+                      placeholder="Separate names with commas"
+                    />
+                  </label>
+                  <div className="community-two-columns">
+                    <label className="community-field">
+                      <span>Birth year</span>
+                      <input
+                        inputMode="numeric"
+                        value={personFields.birthYear}
+                        onChange={(event) => editPerson('birthYear', event.target.value)}
+                        placeholder="Unknown"
+                        maxLength={4}
+                      />
+                    </label>
+                    <label className="community-field">
+                      <span>Death year</span>
+                      <input
+                        inputMode="numeric"
+                        value={personFields.deathYear}
+                        onChange={(event) => editPerson('deathYear', event.target.value)}
+                        placeholder="Unknown"
+                        maxLength={4}
+                      />
+                    </label>
+                  </div>
+                  <label className="community-field">
+                    <span>Themes</span>
+                    <input
+                      value={personFields.themes}
+                      onChange={(event) => editPerson('themes', event.target.value)}
+                      placeholder="Separate themes with commas"
+                    />
+                    <small>In use: {themeOptions.join(', ')}</small>
+                  </label>
+                  <label className="community-field">
+                    <span>Summary</span>
+                    <textarea
+                      rows={3}
+                      maxLength={4000}
+                      value={personFields.summary}
+                      onChange={(event) => editPerson('summary', event.target.value)}
+                      placeholder={
+                        draft.personId
+                          ? ''
+                          : `Leave blank for “Community materials about ${draft.newPersonName || 'this person'}.”`
+                      }
+                    />
+                    <small>
+                      A changed summary cites this contribution. Everything here goes live with the
+                      publication and can be withdrawn with it.
+                    </small>
+                  </label>
+                </div>
+              </details>
               <label className="community-field">
                 <span>Public title</span>
                 <input
@@ -920,12 +1096,19 @@ function ReviewEditor({
                   <option value="entry">Community entry, linked to the person</option>
                   <option value="biography">Community entry and a sourced biography passage</option>
                   <option value="place">Community entry and a map place update</option>
+                  <option value="portrait">Community entry and the person’s portrait</option>
                 </select>
                 <small>
                   Personal memories belong in clearly labeled community entries. Changes to factual
                   records need claim-appropriate evidence.
                 </small>
                 {placementHint && <small className="review-placement-hint">{placementHint}</small>}
+                {applyTo === 'portrait' && record.input.placement?.section !== 'portrait' && (
+                  <small className="review-placement-hint">
+                    The first approved photograph becomes the portrait at the top of the person
+                    page; the entry keeps every approved photograph.
+                  </small>
+                )}
               </label>
               <details open={applyTo !== 'entry'}>
                 <summary className="community-text-button">
@@ -1136,6 +1319,17 @@ function ReviewEditor({
                     draft.newPersonName ||
                     'New person — name required'}
                 </p>
+                {personPatch && (
+                  <p>
+                    Person record changes:{' '}
+                    {Object.keys(personPatch)
+                      .map((key) => personFieldLabels[key as keyof PersonPatch])
+                      .join(', ')}
+                  </p>
+                )}
+                {applyTo === 'portrait' && (
+                  <p>The first approved photograph becomes the portrait.</p>
+                )}
                 <p className="community-body">{draft.body}</p>
                 {draft.context && <p className="community-body">{draft.context}</p>}
                 <dl className="review-facts">

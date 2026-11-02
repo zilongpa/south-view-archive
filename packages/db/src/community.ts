@@ -541,6 +541,72 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
   let personId = review.personId === undefined ? input.personId : review.personId;
   const title = review.title ?? input.title;
   const body = review.body ?? input.body;
+  const allPhotos = (
+    await tx.query<{ data: SubmissionPhoto }>(
+      'SELECT data FROM community.photos WHERE submission_id = $1 ORDER BY created_at, id',
+      [row.id],
+    )
+  ).rows.map((photo) => photo.data);
+  if (review.approvedPhotoIds?.some((id) => !allPhotos.some((photo) => photo.id === id)))
+    throw new DomainError('BAD_REQUEST', 'A selected photo does not belong to this contribution.');
+  if (review.photoEdits?.some((edit) => !allPhotos.some((photo) => photo.id === edit.id)))
+    throw new DomainError('BAD_REQUEST', 'A photo edit does not belong to this contribution.');
+  const photos = allPhotos
+    .filter(
+      (photo) =>
+        review.approvedPhotoIds === undefined || review.approvedPhotoIds.includes(photo.id),
+    )
+    .map((photo) => ({
+      id: photo.id,
+      url: `/api/community/media/${photo.id}`,
+      caption: photo.caption,
+      creator: photo.creator,
+      rights: photo.rights,
+      ...review.photoEdits?.find((edit) => edit.id === photo.id),
+      creditId,
+      width: photo.width,
+      height: photo.height,
+    }));
+  // The first approved photograph becomes the portrait; it stays served through the entry.
+  let portrait: Person['portrait'];
+  if (review.applyTo === 'portrait') {
+    const chosen = photos[0];
+    if (!chosen)
+      throw new DomainError(
+        'BAD_REQUEST',
+        'Approve the photograph that should become the portrait.',
+      );
+    portrait = {
+      url: chosen.url,
+      alt: chosen.caption,
+      credit: chosen.creator,
+      sourceId,
+      creditIds: [creditId],
+    };
+  }
+  const patch = review.personPatch;
+  const patched = Object.values(patch ?? {}).some((value) => value !== undefined);
+  // Reviewer edits to the record itself; a changed summary cites this contribution.
+  const applyPersonPatch = (base: Person): Person =>
+    personSchema.parse({
+      ...base,
+      ...(patch?.name !== undefined ? { name: patch.name } : {}),
+      ...(patch?.aliases !== undefined ? { aliases: patch.aliases } : {}),
+      ...(patch?.birthYear !== undefined ? { birthYear: patch.birthYear ?? undefined } : {}),
+      ...(patch?.deathYear !== undefined ? { deathYear: patch.deathYear ?? undefined } : {}),
+      ...(patch?.themes !== undefined ? { themes: patch.themes } : {}),
+      ...(patch?.summary !== undefined && patch.summary !== base.summary
+        ? {
+            summary: patch.summary,
+            summaryCitations: [...base.summaryCitations, ...citations].filter(
+              (citation, i, all) =>
+                all.findIndex((other) => other.sourceId === citation.sourceId) === i,
+            ),
+          }
+        : {}),
+      ...(portrait ? { portrait } : {}),
+      creditIds: patched || portrait ? [...new Set([...base.creditIds, creditId])] : base.creditIds,
+    });
   if (!personId) {
     const name = review.newPersonName?.trim();
     if (!name)
@@ -549,17 +615,27 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
         'A reviewer must explicitly name the new person before publication.',
       );
     personId = `person-${row.id}`;
-    const person = personSchema.parse({
-      id: personId,
-      name,
-      aliases: [],
-      themes: ['Community'],
-      summary: `Community materials about ${name}.`,
-      summaryCitations: [{ sourceId }],
-      biography: [],
-      creditIds: [creditId],
-    });
+    const person = applyPersonPatch(
+      personSchema.parse({
+        id: personId,
+        name,
+        aliases: [],
+        themes: ['Community'],
+        summary: `Community materials about ${name}.`,
+        summaryCitations: [{ sourceId }],
+        biography: [],
+        creditIds: [creditId],
+      }),
+    );
     await saveProjection(tx, row.id, reviewId, 'persons', person);
+  } else if (patched || portrait) {
+    await saveProjection(
+      tx,
+      row.id,
+      reviewId,
+      'persons',
+      applyPersonPatch(await checkPerson(tx, personId)),
+    );
   }
   const relatedPersonIds = [...new Set(review.relatedPersonIds ?? input.relatedPersonIds)].filter(
     (id) => id !== personId,
@@ -680,32 +756,6 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
     });
     await saveProjection(tx, row.id, reviewId, 'person_places', relation);
   }
-  const allPhotos = (
-    await tx.query<{ data: SubmissionPhoto }>(
-      'SELECT data FROM community.photos WHERE submission_id = $1 ORDER BY created_at, id',
-      [row.id],
-    )
-  ).rows.map((photo) => photo.data);
-  if (review.approvedPhotoIds?.some((id) => !allPhotos.some((photo) => photo.id === id)))
-    throw new DomainError('BAD_REQUEST', 'A selected photo does not belong to this contribution.');
-  if (review.photoEdits?.some((edit) => !allPhotos.some((photo) => photo.id === edit.id)))
-    throw new DomainError('BAD_REQUEST', 'A photo edit does not belong to this contribution.');
-  const photos = allPhotos
-    .filter(
-      (photo) =>
-        review.approvedPhotoIds === undefined || review.approvedPhotoIds.includes(photo.id),
-    )
-    .map((photo) => ({
-      id: photo.id,
-      url: `/api/community/media/${photo.id}`,
-      caption: photo.caption,
-      creator: photo.creator,
-      rights: photo.rights,
-      ...review.photoEdits?.find((edit) => edit.id === photo.id),
-      creditId,
-      width: photo.width,
-      height: photo.height,
-    }));
   const existing = (
     await tx.query<{ data: ContributionEntry }>(
       'SELECT data FROM archive.contributions WHERE id = $1',

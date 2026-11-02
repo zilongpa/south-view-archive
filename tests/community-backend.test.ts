@@ -601,6 +601,114 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
       },
     );
     await t.test(
+      'an approved portrait photograph becomes the person’s portrait and leaves with withdrawal',
+      async () => {
+        const before = (await getArchive()).people.find((person) => person.id === 'john-lewis')!;
+        const receipt = token();
+        const author = { ...guest, receiptToken: receipt };
+        const { submission } = await createDraft(
+          original({
+            placement: { section: 'portrait' },
+            body: 'A photograph of him taken outside the church, probably in the early 1960s.',
+          }),
+          guest,
+          receipt,
+        );
+        const picture = photo({ caption: 'Outside the church, early 1960s' });
+        await attachPhoto(submission.id, picture, author);
+        await finalizeSubmission(submission.id, author);
+        await assert.rejects(
+          reviewSubmission(
+            submission.id,
+            decision({ applyTo: 'portrait', approvedPhotoIds: [] }),
+            reviewer,
+          ),
+          { code: 'BAD_REQUEST' },
+        );
+        await reviewSubmission(
+          submission.id,
+          decision({ applyTo: 'portrait', approvedPhotoIds: [picture.id] }),
+          reviewer,
+        );
+        const after = (await getArchive()).people.find((person) => person.id === 'john-lewis')!;
+        assert.equal(after.portrait?.url, `/api/community/media/${picture.id}`);
+        assert.equal(after.portrait?.alt, 'Outside the church, early 1960s');
+        assert.equal(after.portrait?.sourceId, `contribution-${submission.id}`);
+        assert.ok(after.creditIds.includes(`contributor-${submission.id}`));
+        assert.ok(await getPublicPhoto(picture.id));
+        await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
+        assert.deepEqual(
+          (await getArchive()).people.find((person) => person.id === 'john-lewis'),
+          before,
+        );
+      },
+    );
+    await t.test(
+      'a reviewer can change the person record itself, for existing and new people',
+      async () => {
+        const before = (await getArchive()).people.find((person) => person.id === 'john-lewis')!;
+        const receipt = token();
+        const author = { ...guest, receiptToken: receipt };
+        const { submission } = await createDraft(original(), guest, receipt);
+        await finalizeSubmission(submission.id, author);
+        await reviewSubmission(
+          submission.id,
+          decision({
+            personPatch: {
+              name: 'John Robert Lewis',
+              aliases: ['Representative Lewis'],
+              birthYear: 1940,
+              deathYear: 2020,
+              themes: ['Civil rights', 'Congress'],
+              summary: 'A corrected summary written by the reviewer.',
+            },
+          }),
+          reviewer,
+        );
+        const after = (await getArchive()).people.find((person) => person.id === 'john-lewis')!;
+        assert.equal(after.name, 'John Robert Lewis');
+        assert.deepEqual(after.aliases, ['Representative Lewis']);
+        assert.equal(after.birthYear, 1940);
+        assert.equal(after.deathYear, 2020);
+        assert.deepEqual(after.themes, ['Civil rights', 'Congress']);
+        assert.equal(after.summary, 'A corrected summary written by the reviewer.');
+        assert.ok(
+          after.summaryCitations.some(
+            (citation) => citation.sourceId === `contribution-${submission.id}`,
+          ),
+        );
+        assert.deepEqual(after.biography, before.biography);
+        await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
+        assert.deepEqual(
+          (await getArchive()).people.find((person) => person.id === 'john-lewis'),
+          before,
+        );
+        const fresh = token();
+        const created = await createDraft(
+          original({ kind: 'new-person', personId: null, proposedPersonName: 'Ada Example' }),
+          guest,
+          fresh,
+        );
+        await finalizeSubmission(created.submission.id, { ...guest, receiptToken: fresh });
+        await reviewSubmission(
+          created.submission.id,
+          decision({
+            personId: null,
+            newPersonName: 'Ada Example',
+            personPatch: { deathYear: 1952, themes: ['Education'], summary: 'A teacher.' },
+          }),
+          reviewer,
+        );
+        const person = (await getArchive()).people.find(
+          (item) => item.id === `person-${created.submission.id}`,
+        )!;
+        assert.equal(person.name, 'Ada Example');
+        assert.equal(person.deathYear, 1952);
+        assert.deepEqual(person.themes, ['Education']);
+        assert.equal(person.summary, 'A teacher.');
+      },
+    );
+    await t.test(
       'fixture mode is read-only even when a writable test connection exists',
       async () => {
         process.env.ARCHIVE_DATA_MODE = 'fixture';

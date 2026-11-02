@@ -173,7 +173,18 @@ export const reviewInputSchema = z
     internalNote: z.string().trim().max(5000).default(''),
     sourceIds: z.array(z.string()).max(20).default([]),
     approvedPhotoIds: z.array(z.string()).max(5).optional(),
-    applyTo: z.enum(['entry', 'biography', 'place']).default('entry'),
+    applyTo: z.enum(['entry', 'biography', 'place', 'portrait']).default('entry'),
+    /** Reviewer edits to the person record itself. Omitted fields keep their current values. */
+    personPatch: z
+      .object({
+        name: z.string().trim().min(1).max(160).optional(),
+        aliases: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+        birthYear: eventYearSchema.nullable().optional(),
+        deathYear: eventYearSchema.nullable().optional(),
+        themes: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+        summary: z.string().trim().min(1).max(4000).optional(),
+      })
+      .optional(),
     placePatch: z
       .object({
         placeId: z.string(),
