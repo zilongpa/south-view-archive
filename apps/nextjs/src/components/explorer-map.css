@@ -254,6 +254,16 @@
 .map-explorer .detail-person::after {
   display: none;
 }
+.map-explorer .portrait-credit {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted, #6b6459);
+}
+.map-explorer .portrait-credit a {
+  color: inherit;
+  text-decoration: underline;
+}
 .map-explorer .detail-summary {
   font-size: 18px;
   margin-top: 20px;

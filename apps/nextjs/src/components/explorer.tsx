@@ -25,6 +25,7 @@ import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
 import { placeConnections, precisionLabels, soleOccupant } from '@/lib/place-mode';
 import {
+  portraitRights,
   searchArchive,
   scopeIncludesPlace,
   type ArchiveData,
@@ -820,6 +821,20 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                             )}
                           </div>
                         </div>
+                        {selected.portrait && (
+                          <p className="portrait-credit">
+                            Photo: {selected.portrait.credit}
+                            {portraitRights(selected, archive) && (
+                              <> · {portraitRights(selected, archive)}</>
+                            )}
+                            {' · '}
+                            <Link
+                              href={`/people/${encodeURIComponent(selected.id)}#photo-portrait`}
+                            >
+                              Source
+                            </Link>
+                          </p>
+                        )}
                         <p className="detail-summary">{selected.summary}</p>
                         <section className="connected-places">
                           <h3>

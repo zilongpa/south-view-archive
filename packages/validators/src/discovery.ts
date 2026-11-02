@@ -223,8 +223,9 @@ function discoveryIndex(data: ArchiveData): IndexedResult[] {
     const portrait = person.portrait;
     if (portrait) {
       const source = sources.get(portrait.sourceId);
+      const rights = portrait.rights?.trim() || source?.rights?.trim();
       // Only portraits with an explicit public source and rights statement enter photo discovery.
-      if (source?.rights?.trim())
+      if (source && rights)
         add(
           {
             id: `photo:portrait:${person.id}`,
@@ -244,11 +245,11 @@ function discoveryIndex(data: ArchiveData): IndexedResult[] {
               alt: discoveryPlainText(portrait.alt),
               caption: discoveryPlainText(portrait.alt),
               creator: discoveryPlainText(portrait.credit),
-              rights: discoveryPlainText(source.rights),
+              rights: discoveryPlainText(rights),
               sourceId: source.id,
             },
           },
-          [portrait.alt, portrait.credit, source.rights],
+          [portrait.alt, portrait.credit, rights],
         );
     }
   }

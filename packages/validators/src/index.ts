@@ -56,6 +56,8 @@ export const personSchema = z.object({
       url: z.string(),
       alt: z.string(),
       credit: z.string(),
+      // The licence or rights statement shown with the image, copied from the approved photograph.
+      rights: z.string().optional(),
       sourceId: z.string(),
       creditIds: z.array(z.string()).default(['initial-compilation']),
     })
@@ -140,6 +142,23 @@ export const searchSchema = z.object({
   scope: z.enum(['cemetery', 'atlanta']).default('cemetery'),
 });
 export type SearchInput = z.infer<typeof searchSchema>;
+
+/**
+ * The rights statement to show with a portrait: the portrait's own, else its source's, else the
+ * statement filed with the community photograph it was published from.
+ */
+export function portraitRights(
+  person: Pick<Person, 'portrait'>,
+  data: Pick<ArchiveData, 'sources' | 'contributions'>,
+): string | undefined {
+  const portrait = person.portrait;
+  if (!portrait) return undefined;
+  const source = data.sources.find((item) => item.id === portrait.sourceId);
+  const photo = data.contributions
+    .flatMap((entry) => entry.photos)
+    .find((item) => item.url === portrait.url);
+  return portrait.rights?.trim() || source?.rights?.trim() || photo?.rights?.trim() || undefined;
+}
 
 /** Atlanta is the wider view and includes South-View; place records keep their own scope. */
 export function scopeIncludesPlace(view: Scope, placeScope: Scope) {

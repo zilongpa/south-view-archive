@@ -580,6 +580,7 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       url: chosen.url,
       alt: chosen.caption,
       credit: chosen.creator,
+      rights: chosen.rights,
       sourceId,
       creditIds: [creditId],
     };
