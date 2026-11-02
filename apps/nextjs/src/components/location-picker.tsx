@@ -4,7 +4,7 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MapInstance, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './location-picker.css';
-import { LoaderCircle, MapPin, Search, X } from 'lucide-react';
+import { Crosshair, LoaderCircle, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import { cemeteryArea, cemeteryCenter } from '@/lib/cemetery-area';
 
 export type PickedLocation = {
@@ -33,7 +33,36 @@ const views = {
   atlanta: { center: [-84.3942, 33.7535] as [number, number], zoom: 11.6 },
 };
 // Metropolitan Atlanta, the same box the archive accepts for places.
-const atlantaBox = '-84.65,33.95,-84.1,33.5';
+const atlantaBounds = { west: -84.65, east: -84.1, south: 33.5, north: 33.95 };
+const atlantaBox = `${atlantaBounds.west},${atlantaBounds.north},${atlantaBounds.east},${atlantaBounds.south}`;
+const outsideAtlanta =
+  'That position is outside the Atlanta area this archive maps. Tap the map or search an address instead.';
+function insideAtlanta([lng, lat]: [number, number]) {
+  return (
+    lng >= atlantaBounds.west &&
+    lng <= atlantaBounds.east &&
+    lat >= atlantaBounds.south &&
+    lat <= atlantaBounds.north
+  );
+}
+/**
+ * Coordinates as people paste them: "33.70123, -84.38456" from a phone's map app or a GPS
+ * unit, in either order. In Atlanta the latitude is the positive number and the longitude the
+ * negative one, so the order never has to be guessed. Returns [lng, lat] or null.
+ */
+export function parseCoordinates(text: string): [number, number] | null {
+  const numbers = text.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  if (numbers.length !== 2 || !numbers.every(Number.isFinite)) return null;
+  const [a, b] = numbers as [number, number];
+  const lat = a > 0 ? a : b;
+  const lng = a > 0 ? b : a;
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? [lng, lat] : null;
+}
+const positionErrors: Record<number, string> = {
+  1: 'Location access was refused. Allow it in the browser, or tap the map instead.',
+  2: 'Your position could not be determined. Tap the map instead.',
+  3: 'Finding your position took too long. Try again, or tap the map instead.',
+};
 
 /**
  * A small map where a contributor marks one point: tap or click to place it, drag to adjust,
@@ -43,7 +72,7 @@ export function LocationPicker({
   value,
   onChange,
   label = 'Mark it on the map',
-  hint = 'Tap the map to drop a pin, drag it to adjust, or search an address. Reviewers confirm positions before they are published.',
+  hint = 'Tap the map to drop a pin, drag it to adjust, search an address, or use your device’s GPS. Reviewers confirm positions before they are published.',
 }: {
   value: PickedLocation | null;
   onChange: (value: PickedLocation | null) => void;
@@ -60,6 +89,19 @@ export function LocationPicker({
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
+  // Device position: offered only where the browser can provide one (a secure page with the
+  // Geolocation API). Decided after mount so the server and the first render agree.
+  const [canLocate, setCanLocate] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [coordinateText, setCoordinateText] = useState('');
+  const [positionError, setPositionError] = useState('');
+  // How the current pin was placed, when that matters: a GPS fix carries its accuracy.
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    setCanLocate(
+      typeof navigator !== 'undefined' && 'geolocation' in navigator && window.isSecureContext,
+    );
+  }, []);
 
   useEffect(() => {
     if (!container.current) return;
@@ -103,6 +145,7 @@ export function LocationPicker({
       });
       map.on('click', (event) => {
         const point: [number, number] = [event.lngLat.lng, event.lngLat.lat];
+        setNote('');
         latest.current({ coordinates: point, scope: scopeFor(point) });
       });
     } catch {
@@ -133,6 +176,7 @@ export function LocationPicker({
       marker.on('dragend', () => {
         const at = marker.getLngLat();
         const point: [number, number] = [at.lng, at.lat];
+        setNote('');
         latest.current({ coordinates: point, scope: scopeFor(point) });
       });
       markerRef.current = marker;
@@ -179,8 +223,51 @@ export function LocationPicker({
       setSearching(false);
     }
   }
+  /** A point from the device or from typed coordinates: pinned, zoomed to, and checked. */
+  function pinAt(point: [number, number], pinNote: string) {
+    if (!insideAtlanta(point)) {
+      setPositionError(outsideAtlanta);
+      return false;
+    }
+    setPositionError('');
+    setNote(pinNote);
+    onChange({ coordinates: point, scope: scopeFor(point) });
+    mapRef.current?.easeTo({ center: point, zoom: 17, duration: 500 });
+    return true;
+  }
+  function locate() {
+    if (locating || !canLocate) return;
+    setLocating(true);
+    setPositionError('');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        const { longitude, latitude, accuracy } = position.coords;
+        const within = Number.isFinite(accuracy)
+          ? ` · GPS, within about ${Math.round(accuracy)} m`
+          : '';
+        pinAt([longitude, latitude], `your current position${within}`);
+      },
+      (failure) => {
+        setLocating(false);
+        setPositionError(positionErrors[failure.code] ?? positionErrors[2]!);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
+  }
+  function pinTypedCoordinates() {
+    const point = parseCoordinates(coordinateText);
+    if (!point) {
+      setPositionError(
+        'Enter a latitude and longitude as two numbers, for example 33.70108, -84.38471.',
+      );
+      return;
+    }
+    if (pinAt(point, 'typed coordinates')) setCoordinateText('');
+  }
   function choose(hit: SearchHit) {
     setHits([]);
+    setNote('');
     onChange({
       coordinates: hit.coordinates,
       scope: scopeFor(hit.coordinates),
@@ -244,6 +331,53 @@ export function LocationPicker({
           The map could not load. You can still describe the place; reviewers will position it.
         </small>
       )}
+      <div className="location-picker-gps">
+        {canLocate && (
+          <button
+            type="button"
+            className="community-secondary"
+            onClick={locate}
+            disabled={locating}
+            title="Drop the pin where this device is right now"
+          >
+            {locating ? (
+              <LoaderCircle size={16} className="community-spinner" aria-hidden="true" />
+            ) : (
+              <LocateFixed size={16} aria-hidden="true" />
+            )}
+            {locating ? 'Finding you…' : 'Use my location'}
+          </button>
+        )}
+        <div className="location-picker-coordinates">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={coordinateText}
+            placeholder="GPS coordinates, e.g. 33.70108, -84.38471"
+            aria-label="GPS coordinates: latitude, longitude"
+            onChange={(event) => setCoordinateText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                pinTypedCoordinates();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="community-secondary"
+            onClick={pinTypedCoordinates}
+            disabled={!coordinateText.trim()}
+          >
+            <Crosshair size={16} aria-hidden="true" /> Pin
+          </button>
+        </div>
+      </div>
+      {positionError && (
+        <small className="community-field-error" role="alert">
+          {positionError}
+        </small>
+      )}
       <div className="location-picker-tools">
         <button type="button" className="community-text-button" onClick={() => jump('cemetery')}>
           South-View Cemetery
@@ -252,14 +386,21 @@ export function LocationPicker({
           Atlanta
         </button>
         {value && (
-          <button type="button" className="community-text-button" onClick={() => onChange(null)}>
+          <button
+            type="button"
+            className="community-text-button"
+            onClick={() => {
+              setNote('');
+              onChange(null);
+            }}
+          >
             <X size={14} aria-hidden="true" /> Clear pin
           </button>
         )}
       </div>
       <small className="location-picker-status" aria-live="polite">
         {value
-          ? `Pin placed · ${value.scope === 'cemetery' ? 'inside South-View Cemetery' : 'Atlanta'} · ${value.coordinates[1].toFixed(5)}, ${value.coordinates[0].toFixed(5)}${value.address ? ` · ${value.address}` : ''}`
+          ? `Pin placed · ${value.scope === 'cemetery' ? 'inside South-View Cemetery' : 'Atlanta'} · ${value.coordinates[1].toFixed(5)}, ${value.coordinates[0].toFixed(5)}${value.address ? ` · ${value.address}` : note ? ` · ${note}` : ''}`
           : hint}
       </small>
     </div>

@@ -64,6 +64,29 @@
 .location-picker-map .maplibregl-ctrl-attrib {
   font-size: 9px;
 }
+/* Device position and typed coordinates: one row that wraps on narrow screens. */
+.location-picker-gps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.location-picker-gps > .community-secondary {
+  min-height: 44px;
+  padding: 0 14px;
+  gap: 6px;
+  white-space: nowrap;
+}
+.location-picker-coordinates {
+  display: flex;
+  flex: 1;
+  min-width: min(100%, 260px);
+  gap: 8px;
+}
+.location-picker-coordinates input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
 .location-picker-tools {
   display: flex;
   flex-wrap: wrap;
