@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, BookOpen, ExternalLink, Headphones, MapPin } from 'lucide-react';
 import {
   formatEventDate,
+  portraitRights,
   publicRelatedPersonIds,
   type ArchiveData,
   type EventDate,
@@ -195,7 +196,7 @@ export function PersonArchive({
                           .filter(Boolean)
                           .join(', ') || 'Initial archive compilation',
                       rights:
-                        portraitSource?.rights ||
+                        portraitRights(person, data) ||
                         'No rights statement is recorded here. Consult the original source.',
                       source: portraitSource
                         ? { href: portraitSource.url, label: 'View original image source' }
