@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapInstance, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Compass, LocateFixed, MapPin, Minus, Plus, RefreshCw } from 'lucide-react';
+import { Compass, Focus, LocateFixed, MapPin, Minus, Plus, RefreshCw } from 'lucide-react';
 import type { Person, PersonPlace, Place, Scope } from '@southview/validators';
 import type { Viewport } from '@/lib/explore-state';
 import { createMarkerHoverController, type PreviewTarget } from '@/lib/explore-preview';
@@ -20,6 +20,8 @@ type Props = {
   resetEpoch: number;
   focusSelection: boolean;
   resultsOpen: boolean;
+  /** With a person open: whether the map shows only their places, and the control to change it. */
+  focusPerson?: { name: string; only: boolean; onToggle: () => void };
   onSelect: (personId: string, placeId: string) => void;
   onPreview: (target: PreviewTarget | null) => void;
   onViewport: (v: Viewport, autoScope: boolean) => void;
@@ -48,6 +50,8 @@ export default function ArchiveMap(props: Props) {
     [],
   );
   const markerRefs = useRef(new Map<string, { marker: Marker; element: HTMLButtonElement }>());
+  /** The marker the pointer (or keyboard focus) rests on; unrelated markers fade meanwhile. */
+  const hoveredPlace = useRef<string | null>(null);
   const [error, setError] = useState(false);
   const [ready, setReady] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -307,6 +311,39 @@ export default function ArchiveMap(props: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
+    // Markers that share no person with the rested-on marker fade, clusters with them, so the
+    // places of one life stand out. Nothing fades once the pointer leaves.
+    const applyDim = () => {
+      const hovered = hoveredPlace.current;
+      const related = new Set<string>();
+      if (hovered && markerRefs.current.has(hovered)) {
+        const people = new Set(
+          current.current.relations.filter((r) => r.placeId === hovered).map((r) => r.personId),
+        );
+        for (const r of current.current.relations)
+          if (people.has(r.personId)) related.add(r.placeId);
+        related.add(hovered);
+      }
+      const dimming = related.size > 0;
+      markerRefs.current.forEach((entry, id) =>
+        entry.element.classList.toggle('is-dimmed', dimming && !related.has(id)),
+      );
+      for (const kind of markerKinds) {
+        if (!map.getLayer(`${kind.source}-clusters`)) continue;
+        map.setPaintProperty(`${kind.source}-clusters`, 'circle-opacity', dimming ? 0.3 : 1);
+        map.setPaintProperty(`${kind.source}-clusters`, 'circle-stroke-opacity', dimming ? 0.3 : 1);
+        map.setPaintProperty(`${kind.source}-cluster-count`, 'text-opacity', dimming ? 0.3 : 1);
+      }
+    };
+    const rest = (placeId: string) => {
+      hoveredPlace.current = placeId;
+      applyDim();
+    };
+    const unrest = (placeId: string) => {
+      if (hoveredPlace.current !== placeId) return;
+      hoveredPlace.current = null;
+      applyDim();
+    };
     const render = () => {
       if (!mapRef.current || markerKinds.some((kind) => !map.getSource(kind.source))) return;
       const unclustered = new Set(
@@ -323,6 +360,7 @@ export default function ArchiveMap(props: Props) {
       markerRefs.current.forEach((entry, id) => {
         if (!visibleIds.has(id)) {
           markerHover.leave(entry.element);
+          if (hoveredPlace.current === id) hoveredPlace.current = null;
           entry.marker.remove();
           markerRefs.current.delete(id);
         }
@@ -393,17 +431,22 @@ export default function ArchiveMap(props: Props) {
         label.hidden = current.current.selectedPlaceId !== place.id;
         el.onclick = () => current.current.onSelect(person.id, place.id);
         el.onpointerenter = (event) => {
-          if (event.pointerType !== 'touch')
-            markerHover.enter({
-              personId: person.id,
-              placeId: place.id,
-              anchor: el,
-              input: 'pointer',
-            });
+          if (event.pointerType === 'touch') return;
+          rest(place.id);
+          markerHover.enter({
+            personId: person.id,
+            placeId: place.id,
+            anchor: el,
+            input: 'pointer',
+          });
         };
-        el.onpointerleave = () => markerHover.leave(el);
+        el.onpointerleave = () => {
+          unrest(place.id);
+          markerHover.leave(el);
+        };
         el.onfocus = () => {
           if (el.matches(':focus-visible')) {
+            rest(place.id);
             markerHover.clear();
             current.current.onPreview({
               personId: person.id,
@@ -413,7 +456,10 @@ export default function ArchiveMap(props: Props) {
             });
           }
         };
-        el.onblur = () => current.current.onPreview(null);
+        el.onblur = () => {
+          unrest(place.id);
+          current.current.onPreview(null);
+        };
         if (!previous)
           markerRefs.current.set(place.id, {
             element: el,
@@ -428,6 +474,7 @@ export default function ArchiveMap(props: Props) {
           });
         else previous.marker.setLngLat(place.coordinates!);
       });
+      applyDim();
     };
     refreshMarkers.current = render;
     render();
@@ -538,6 +585,22 @@ export default function ArchiveMap(props: Props) {
         <LocateFixed size={18} aria-hidden="true" /> South-View
       </button>
       <div className="map-caption" aria-label="Map legend">
+        {props.focusPerson && (
+          <button
+            type="button"
+            className="map-focus-toggle"
+            aria-pressed={props.focusPerson.only}
+            onClick={props.focusPerson.onToggle}
+            title={
+              props.focusPerson.only
+                ? 'Show every marker again'
+                : `Hide every marker except ${props.focusPerson.name}'s places`
+            }
+          >
+            <Focus size={13} aria-hidden="true" />
+            {props.focusPerson.only ? `Only ${props.focusPerson.name}` : 'Only this person'}
+          </button>
+        )}
         <span>
           <span className="legend-pin legend-pin-grave" aria-hidden="true" /> Grave marker
         </span>

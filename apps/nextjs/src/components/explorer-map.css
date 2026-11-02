@@ -391,6 +391,33 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+/* Legend control: with a person open, keep only their markers on the map. */
+.map-explorer .map-focus-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px 10px;
+  border: 1px solid #c9bfae;
+  border-radius: 15px;
+  background: #fffdf8;
+  color: var(--wine);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-explorer .map-focus-toggle:hover {
+  background: #f3ece0;
+}
+.map-explorer .map-focus-toggle[aria-pressed='true'] {
+  background: var(--wine);
+  border-color: var(--wine);
+  color: #fffcf6;
+}
 .map-explorer .cemetery-key {
   display: inline-block;
   width: 12px;
@@ -502,6 +529,23 @@
 .map-explorer .map-marker.is-selected {
   z-index: 3;
 }
+/* Resting on a marker fades every marker that shares no person with it, so the places of one
+   life stand out from the rest of the map. */
+/* The pin and label fade, not the button: MapLibre writes the button's own opacity inline. */
+.map-explorer .map-marker > .marker-pin,
+.map-explorer .map-marker > .marker-label {
+  transition: opacity 0.18s ease;
+}
+.map-explorer .map-marker.is-dimmed > .marker-pin,
+.map-explorer .map-marker.is-dimmed > .marker-label {
+  opacity: 0.28;
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-explorer .map-marker > .marker-pin,
+  .map-explorer .map-marker > .marker-label {
+    transition: none;
+  }
+}
 .map-explorer .map-marker:focus-visible {
   outline: 3px solid var(--wine);
   outline-offset: 4px;
@@ -601,8 +645,25 @@
     font-size: 11px;
     gap: 8px;
   }
+  /* Above the bottom sheet only the "only this person" control remains; the legend would
+     fight the sheet for the little map that is left. */
   .map-explorer.has-selection .map-caption {
+    display: flex; /* globals.css hides the legend here; the control above the sheet stays */
+    bottom: calc(var(--detail-height, 58%) + 34px);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    max-width: calc(100% - 200px); /* clear of the South-View button beside it */
+  }
+  .map-explorer.has-selection .map-caption > span {
     display: none;
+  }
+  .map-explorer.has-selection .map-caption:not(:has(.map-focus-toggle)) {
+    display: none;
+  }
+  .map-explorer .map-focus-toggle {
+    min-height: 34px;
+    box-shadow: 0 2px 8px #50402318;
   }
   .map-explorer.has-selection .maplibregl-ctrl-bottom-right {
     bottom: 58%;
