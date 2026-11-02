@@ -100,13 +100,7 @@ export default function ArchiveMap(props: Props) {
         renderWorldCopies: false,
       });
       mapRef.current = map;
-      map.addControl(
-        new maplibregl.AttributionControl({
-          compact: false,
-          customAttribution: process.env.NEXT_PUBLIC_MAP_ATTRIBUTION || undefined,
-        }),
-        'bottom-right',
-      );
+      // No attribution control: on a phone it drifted around the bottom sheet.
       map.on('error', () => {
         tileErrors++;
         if (!disposed && tileErrors >= 1) setTileWarning(true);
