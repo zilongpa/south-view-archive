@@ -19,6 +19,7 @@ import {
   type VetOverview,
 } from '@southview/validators';
 import { communityRequest, signOutCommunity, type CommunitySession } from '@/lib/community-client';
+import { formatReviewIssues } from '@/lib/review-validation';
 import {
   filterReviewQueue,
   kindLabels,
@@ -698,7 +699,14 @@ function ReviewEditor({
           };
     const parsed = reviewInputSchema.safeParse(payload);
     if (!parsed.success) {
-      setError(parsed.error.issues.map((issue) => issue.message).join(' '));
+      setError(
+        formatReviewIssues(
+          parsed.error.issues,
+          payload.photoEdits?.map(
+            (photo) => record.photos.findIndex((original) => original.id === photo.id) + 1,
+          ),
+        ),
+      );
       return;
     }
     setBusy(true);
@@ -1018,7 +1026,7 @@ function ReviewEditor({
                     Uncheck photographs that should remain private. Review the original and edit
                     public captions and attribution.
                   </p>
-                  {record.photos.map((photo) => {
+                  {record.photos.map((photo, index) => {
                     const edited = photoEdits.find((edit) => edit.id === photo.id)!;
                     const update = (key: 'caption' | 'creator' | 'rights', value: string) => {
                       setPhotoEdits((previous) =>
@@ -1030,6 +1038,7 @@ function ReviewEditor({
                     };
                     return (
                       <div className="community-section" key={photo.id}>
+                        <h4>Photograph {index + 1}</h4>
                         <label className="community-check">
                           <input
                             type="checkbox"
