@@ -553,10 +553,7 @@ function ReviewEditor({
       setError('Include a clear message to the contributor explaining this decision.');
       return;
     }
-    if (action === 'publish' && applyTo !== 'entry' && sourceIds.length === 0) {
-      setError('Choose supporting archive sources before changing a biography or map place.');
-      return;
-    }
+    // Extra archive sources are optional: publication always cites the contribution itself.
     if (
       action === 'publish' &&
       applyTo === 'place' &&
@@ -930,9 +927,9 @@ function ReviewEditor({
                 </small>
                 {placementHint && <small className="review-placement-hint">{placementHint}</small>}
               </label>
-              <details>
+              <details open={applyTo !== 'entry'}>
                 <summary className="community-text-button">
-                  Select supporting sources ({sourceIds.length})
+                  Add supporting archive sources, optional ({sourceIds.length})
                 </summary>
                 <div
                   className="community-fields"
