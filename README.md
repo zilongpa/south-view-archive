@@ -1,4 +1,4 @@
-# South-View · A Living Archive
+# South-View
 
 A public archive application designed to grow into a production service, connecting people with South-View Cemetery and places across Atlanta. Built from a focused **create-t3-turbo** starter: Next.js App Router, TypeScript, pnpm/Turbo, tRPC, Drizzle/PostgreSQL, and MapLibre GL JS.
 
