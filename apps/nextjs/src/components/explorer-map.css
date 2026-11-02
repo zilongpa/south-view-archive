@@ -184,7 +184,7 @@
 }
 .map-explorer .detail-panel {
   top: 80px;
-  bottom: 42px;
+  bottom: 16px; /* one baseline with the legend and the control stack */
   right: 16px;
   width: var(--detail-width, 360px);
   border: 1px solid #d4cbbd;
@@ -351,7 +351,7 @@
 }
 .map-explorer .map-controls {
   right: 16px;
-  bottom: 108px;
+  bottom: 16px;
   border-radius: 9px;
 }
 .map-explorer.has-selection .map-controls {
@@ -360,36 +360,32 @@
 .map-explorer .map-north {
   display: none;
 }
-.map-explorer .map-home {
-  position: absolute;
-  right: 16px;
-  bottom: 48px;
-  z-index: 7;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 8px 13px;
-  border: 1px solid #d2cabb;
-  border-radius: 24px;
-  background: #fffcf9;
+/* Below the zoom buttons: centre on my location, centre on the cemetery. */
+.map-explorer .map-controls button {
   color: var(--wine);
-  box-shadow: 0 2px 10px #302d2826;
-  font-size: 14px;
 }
-.map-explorer.has-selection .map-home {
-  right: calc(var(--detail-width, 360px) + 32px);
+.map-explorer .map-controls button:disabled {
+  color: var(--muted);
 }
+.map-explorer .map-spin {
+  animation: map-spin 0.9s linear infinite;
+}
+@keyframes map-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* The legend stands as a column in the corner, so a narrow map never clips its tail. */
 .map-explorer .map-caption {
   left: 16px;
-  bottom: 30px;
+  bottom: 16px;
   font-size: 12px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: 6px;
   max-width: none;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 /* Legend control: with a person open, keep only their markers on the map. */
 .map-explorer .map-focus-toggle {
@@ -567,8 +563,7 @@
   .map-explorer .detail-panel {
     width: var(--detail-width, 310px);
   }
-  .map-explorer.has-selection .map-controls,
-  .map-explorer.has-selection .map-home {
+  .map-explorer.has-selection .map-controls {
     right: calc(var(--detail-width, 310px) + 32px);
   }
   .browse-people-toggle {
@@ -620,18 +615,10 @@
   }
   .map-explorer .map-controls {
     right: 12px;
-    bottom: 94px;
-  }
-  .map-explorer .map-home {
-    right: 12px;
     bottom: 32px;
   }
   .map-explorer.has-selection .map-controls {
     right: 12px;
-    bottom: calc(var(--detail-height, 58%) + 34px);
-  }
-  .map-explorer.has-selection .map-home {
-    right: 66px;
     bottom: calc(var(--detail-height, 58%) + 34px);
   }
   /* The compass would float over a panel that has been dragged taller. */
@@ -640,7 +627,7 @@
   }
   .map-explorer .map-caption {
     left: 12px;
-    bottom: 91px;
+    bottom: 32px;
     padding: 4px 8px;
     font-size: 11px;
     gap: 8px;
@@ -653,7 +640,7 @@
     padding: 0;
     border: 0;
     background: transparent;
-    max-width: calc(100% - 200px); /* clear of the South-View button beside it */
+    max-width: calc(100% - 80px); /* clear of the control column beside it */
   }
   .map-explorer.has-selection .map-caption > span {
     display: none;
@@ -699,7 +686,7 @@
 @media (max-height: 540px) and (min-width: 761px) {
   .map-explorer .detail-panel {
     top: 78px;
-    bottom: 26px;
+    bottom: 16px;
   }
   .map-explorer .detail-bottom .copy-record {
     display: none;
