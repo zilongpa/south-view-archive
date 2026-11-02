@@ -114,3 +114,43 @@ test('unconfigured Vet does not prevent human publication; decisions require con
     );
   }
 });
+
+test('review validation names the field that is missing instead of a raw length rule', () => {
+  const place = {
+    placeId: 'community-place-1',
+    name: 'Burial site',
+    scope: 'cemetery',
+    coordinates: null,
+    precision: 'unmapped',
+    locationNote: 'No position has been verified.',
+    relationship: '',
+  };
+  const relationship = reviewInputSchema.safeParse({ action: 'publish', placePatch: place });
+  assert.equal(relationship.success, false);
+  assert.equal(
+    relationship.error?.issues[0]?.message,
+    'Describe the person’s relationship to the map place.',
+  );
+  const note = reviewInputSchema.safeParse({
+    action: 'publish',
+    placePatch: { ...place, relationship: 'Buried here', locationNote: '  ' },
+  });
+  assert.equal(
+    note.error?.issues[0]?.message,
+    'Describe the location evidence and its limits for the map place.',
+  );
+  const caption = reviewInputSchema.safeParse({
+    action: 'publish',
+    photoEdits: [{ id: 'p1', caption: '', creator: 'Anon', rights: 'Family photo' }],
+  });
+  assert.equal(caption.error?.issues[0]?.message, 'Give each approved photograph a caption.');
+  const summary = reviewInputSchema.safeParse({ action: 'publish', personPatch: { summary: '' } });
+  assert.equal(
+    summary.error?.issues[0]?.message,
+    'Enter a summary for the person, or leave it as it was.',
+  );
+  for (const message of [relationship, note, caption, summary].map(
+    (r) => r.error?.issues[0]?.message,
+  ))
+    assert.equal(message?.includes('Too small'), false);
+});

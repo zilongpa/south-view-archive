@@ -146,8 +146,18 @@ export const reviewInputSchema = z
   .object({
     action: z.enum(['publish', 'needs-information', 'reject', 'withdraw']),
     featured: z.boolean().optional(),
-    title: z.string().trim().min(3).max(160).optional(),
-    body: z.string().trim().min(20).max(20000).optional(),
+    title: z
+      .string()
+      .trim()
+      .min(3, 'Give the public title at least 3 characters.')
+      .max(160)
+      .optional(),
+    body: z
+      .string()
+      .trim()
+      .min(20, 'Keep at least 20 characters of public text.')
+      .max(20000)
+      .optional(),
     context: z.string().trim().max(4000).optional(),
     sourceCreator: z.string().trim().max(200).optional(),
     narrator: z.string().trim().max(200).optional(),
@@ -156,14 +166,27 @@ export const reviewInputSchema = z
       .array(
         z.object({
           id: z.string(),
-          caption: z.string().trim().min(1).max(500),
-          creator: z.string().trim().min(1).max(160),
-          rights: z.string().trim().min(1).max(1000),
+          caption: z.string().trim().min(1, 'Give each approved photograph a caption.').max(500),
+          creator: z
+            .string()
+            .trim()
+            .min(1, 'Name the creator of each approved photograph.')
+            .max(160),
+          rights: z
+            .string()
+            .trim()
+            .min(1, 'State the rights for each approved photograph.')
+            .max(1000),
         }),
       )
       .max(5)
       .optional(),
-    personId: z.string().min(1).max(120).nullable().optional(),
+    personId: z
+      .string()
+      .min(1, 'Choose the person this contribution concerns.')
+      .max(120)
+      .nullable()
+      .optional(),
     relatedPersonIds: linkedRecordIdsSchema.optional(),
     placeIds: linkedRecordIdsSchema.optional(),
     eventDate: eventDateSchema.optional(),
@@ -177,25 +200,47 @@ export const reviewInputSchema = z
     /** Reviewer edits to the person record itself. Omitted fields keep their current values. */
     personPatch: z
       .object({
-        name: z.string().trim().min(1).max(160).optional(),
-        aliases: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+        name: z
+          .string()
+          .trim()
+          .min(1, 'Enter the person’s public name, or leave it as it was.')
+          .max(160)
+          .optional(),
+        aliases: z
+          .array(z.string().trim().min(1, 'Remove the empty entry under other names.').max(160))
+          .max(20)
+          .optional(),
         birthYear: eventYearSchema.nullable().optional(),
         deathYear: eventYearSchema.nullable().optional(),
-        themes: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
-        summary: z.string().trim().min(1).max(4000).optional(),
+        themes: z
+          .array(z.string().trim().min(1, 'Remove the empty theme entry.').max(80))
+          .max(20)
+          .optional(),
+        summary: z
+          .string()
+          .trim()
+          .min(1, 'Enter a summary for the person, or leave it as it was.')
+          .max(4000)
+          .optional(),
       })
       .optional(),
     placePatch: z
       .object({
         placeId: z.string(),
-        name: z.string().min(1),
+        name: z.string().trim().min(1, 'Name the map place.'),
         scope: z.enum(['cemetery', 'atlanta']),
         coordinates: z
           .tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)])
           .nullable(),
         precision: z.enum(['reference', 'address', 'verified', 'unmapped']),
-        locationNote: z.string().min(1),
-        relationship: z.string().min(1),
+        locationNote: z
+          .string()
+          .trim()
+          .min(1, 'Describe the location evidence and its limits for the map place.'),
+        relationship: z
+          .string()
+          .trim()
+          .min(1, 'Describe the person’s relationship to the map place.'),
         /** Public description of the place itself; omitted keeps the current one. */
         summary: z.string().trim().max(4000).optional(),
       })

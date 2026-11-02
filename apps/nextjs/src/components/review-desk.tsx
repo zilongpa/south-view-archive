@@ -119,7 +119,9 @@ function defaultApplyTo(record: SubmissionRecord): ReviewInput['applyTo'] {
   if (placement.section === 'portrait') return 'portrait';
   return 'entry';
 }
+const unmappedNote = 'No position has been verified; the place is listed without a map marker.';
 function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraft {
+  // A publishable draft from the start: the schema requires a note and a relationship.
   const empty: PlaceDraft = {
     id: '',
     name: '',
@@ -127,8 +129,8 @@ function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraf
     lng: '',
     lat: '',
     precision: 'unmapped',
-    note: '',
-    relationship: '',
+    note: unmappedNote,
+    relationship: record.input.title,
     summary: '',
   };
   const placement = record.input.placement;
@@ -161,7 +163,7 @@ function initialPlace(record: SubmissionRecord, archive: ArchiveData): PlaceDraf
     precision: coordinates ? 'reference' : 'unmapped',
     note: coordinates
       ? 'Position marked on the map by the contributor; not independently verified.'
-      : '',
+      : unmappedNote,
     relationship: record.input.title,
     summary: placement.proposedPlaceSummary ?? '',
   };
@@ -594,10 +596,12 @@ function ReviewEditor({
     initialPersonFields.current = next;
     setPersonFields(next);
   }
+  // The relationship text belongs to this contribution, so it survives switching places.
   function choosePlace(id: string) {
     const chosen = archive.places.find((place) => place.id === id);
-    setPlace(
-      chosen
+    setPlace((previous) => {
+      const relationship = previous.relationship.trim() || record.input.title;
+      return chosen
         ? {
             id: chosen.id,
             name: chosen.name,
@@ -606,7 +610,7 @@ function ReviewEditor({
             lat: chosen.coordinates ? String(chosen.coordinates[1]) : '',
             precision: chosen.precision,
             note: chosen.locationNote,
-            relationship: '',
+            relationship,
             summary: chosen.summary,
           }
         : {
@@ -616,11 +620,11 @@ function ReviewEditor({
             lng: '',
             lat: '',
             precision: 'unmapped',
-            note: '',
-            relationship: '',
+            note: unmappedNote,
+            relationship,
             summary: '',
-          },
-    );
+          };
+    });
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
