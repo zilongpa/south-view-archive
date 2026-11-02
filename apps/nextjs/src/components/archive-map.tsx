@@ -35,8 +35,8 @@ type Props = {
   resetEpoch: number;
   focusSelection: boolean;
   resultsOpen: boolean;
-  /** With a person open: whether the map shows only their places, and the control to change it. */
-  focusPerson?: { name: string; only: boolean; onToggle: () => void };
+  /** With a record open: whether the map shows only its places, and the control to change it. */
+  focus?: { name: string; kind: 'person' | 'place'; only: boolean; onToggle: () => void };
   onSelect: (personId: string, placeId: string) => void;
   onPreview: (target: PreviewTarget | null) => void;
   onViewport: (v: Viewport, autoScope: boolean) => void;
@@ -675,20 +675,26 @@ export default function ArchiveMap(props: Props) {
         </div>
       )}
       <div className="map-caption" aria-label="Map legend">
-        {props.focusPerson && (
+        {props.focus && (
           <button
             type="button"
             className="map-focus-toggle"
-            aria-pressed={props.focusPerson.only}
-            onClick={props.focusPerson.onToggle}
+            aria-pressed={props.focus.only}
+            onClick={props.focus.onToggle}
             title={
-              props.focusPerson.only
+              props.focus.only
                 ? 'Show every marker again'
-                : `Hide every marker except ${props.focusPerson.name}'s places`
+                : props.focus.kind === 'person'
+                  ? `Hide every marker except ${props.focus.name}'s places`
+                  : `Hide every marker except ${props.focus.name} and the places of the people connected to it`
             }
           >
             <Focus size={13} aria-hidden="true" />
-            {props.focusPerson.only ? `Only ${props.focusPerson.name}` : 'Only this person'}
+            {props.focus.only
+              ? `Only ${props.focus.name}`
+              : props.focus.kind === 'person'
+                ? 'Only this person'
+                : 'Only this place'}
           </button>
         )}
         <span>

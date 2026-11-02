@@ -274,11 +274,25 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const placeOrigin = placeOnly && selected ? selected : undefined;
   const placePeople = placeOnly ? placeConnections(archive, placeOnly.id, placeOrigin?.id) : [];
   const hasSelection = !!selected || !!placeOnly;
-  // "Only this person": the map keeps the open person's places and drops every other marker.
-  // The list and search are untouched, so another person is always one click away.
-  const focusedPlaceIds =
-    selected && focusOnly
-      ? new Set(archive.relations.filter((r) => r.personId === selected.id).map((r) => r.placeId))
+  // "Only this person" / "Only this place": the map keeps the open record's places and drops
+  // every other marker. For a person, their places; for a place, the place itself and every
+  // place of the people connected to it. The list and search are untouched, so another
+  // record is always one click away.
+  const focusedPlaceIds = (() => {
+    if (!focusOnly || !hasSelection) return null;
+    const people = placeOnly
+      ? new Set(archive.relations.filter((r) => r.placeId === placeOnly.id).map((r) => r.personId))
+      : new Set([selected!.id]);
+    const ids = new Set(
+      archive.relations.filter((r) => people.has(r.personId)).map((r) => r.placeId),
+    );
+    if (placeOnly) ids.add(placeOnly.id);
+    return ids;
+  })();
+  const focusSubject = placeOnly
+    ? { name: placeOnly.name, kind: 'place' as const }
+    : selected
+      ? { name: displayPersonName(selected.name), kind: 'person' as const }
       : null;
   const mapPlaces = focusedPlaceIds
     ? results.places.filter((p) => focusedPlaceIds.has(p.id))
@@ -630,13 +644,9 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   onViewport={onViewport}
                   onFailure={() => setShowResults(true)}
                   resultsOpen={showResults}
-                  focusPerson={
-                    selected
-                      ? {
-                          name: displayPersonName(selected.name),
-                          only: focusOnly,
-                          onToggle: toggleFocusOnly,
-                        }
+                  focus={
+                    focusSubject
+                      ? { ...focusSubject, only: focusOnly, onToggle: toggleFocusOnly }
                       : undefined
                   }
                   onReturnToCemetery={() => changeScope('cemetery')}
