@@ -49,6 +49,7 @@ import {
 // Pushed with a place opened from a person, so the panel's back control can use the real
 // history entry instead of adding one.
 type HistoryState = { backToPerson?: boolean } | null;
+const focusStorageKey = 'southview.explore.focus-person';
 
 const ArchiveMap = dynamic(() => import('./archive-map'), {
   ssr: false,
@@ -99,6 +100,26 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const triggerRef = useRef<HTMLElement | null>(null);
   const liveState = useRef(state);
   liveState.current = state;
+  // With a person open, the map can hide every other marker. The choice is remembered on this
+  // device, since a reader who wants it usually wants it for every person they open.
+  const [focusOnly, setFocusOnly] = useState(false);
+  useEffect(() => {
+    try {
+      setFocusOnly(window.localStorage.getItem(focusStorageKey) === '1');
+    } catch {
+      /* Storage can be unavailable; the toggle still works for this visit. */
+    }
+  }, []);
+  const toggleFocusOnly = useCallback(() => {
+    setFocusOnly((value) => {
+      try {
+        window.localStorage.setItem(focusStorageKey, value ? '0' : '1');
+      } catch {
+        /* See above. */
+      }
+      return !value;
+    });
+  }, []);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The panel's back control pops a history entry; the panel keeps focus once it re-renders.
   const focusPanelOnPop = useRef(false);
@@ -253,6 +274,18 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const placeOrigin = placeOnly && selected ? selected : undefined;
   const placePeople = placeOnly ? placeConnections(archive, placeOnly.id, placeOrigin?.id) : [];
   const hasSelection = !!selected || !!placeOnly;
+  // "Only this person": the map keeps the open person's places and drops every other marker.
+  // The list and search are untouched, so another person is always one click away.
+  const focusedPlaceIds =
+    selected && focusOnly
+      ? new Set(archive.relations.filter((r) => r.personId === selected.id).map((r) => r.placeId))
+      : null;
+  const mapPlaces = focusedPlaceIds
+    ? results.places.filter((p) => focusedPlaceIds.has(p.id))
+    : results.places;
+  const mapRelations = focusedPlaceIds
+    ? results.relations.filter((r) => focusedPlaceIds.has(r.placeId))
+    : results.relations;
   const preview = archive.people.find((p) => p.id === previewTarget?.personId);
   const previewPlace =
     previewTarget?.placeId && !soleOccupant(archive, previewTarget.placeId)
@@ -576,9 +609,9 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
             <div className="map-column">
               {initialized && (
                 <ArchiveMap
-                  places={results.places}
+                  places={mapPlaces}
                   people={people}
-                  relations={results.relations}
+                  relations={mapRelations}
                   scope={state.scope}
                   selectedPlaceId={placeOnly?.id ?? selectedPlace?.id ?? null}
                   selectedPersonId={selected?.id ?? null}
@@ -597,6 +630,15 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   onViewport={onViewport}
                   onFailure={() => setShowResults(true)}
                   resultsOpen={showResults}
+                  focusPerson={
+                    selected
+                      ? {
+                          name: displayPersonName(selected.name),
+                          only: focusOnly,
+                          onToggle: toggleFocusOnly,
+                        }
+                      : undefined
+                  }
                   onReturnToCemetery={() => changeScope('cemetery')}
                 />
               )}

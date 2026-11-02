@@ -1,9 +1,10 @@
+/* The desk is an ordinary page: it grows with its content and the window scrolls it. The
+   queue column sticks beside the open submission (desktop only) and scrolls on its own. */
 .review-main {
-  height: calc(100dvh - 64px);
+  min-height: calc(100dvh - 64px);
   display: flex;
   flex-direction: column;
   padding: 0 24px 20px;
-  min-height: 0;
 }
 .review-main [hidden] {
   display: none !important;
@@ -112,21 +113,32 @@
   color: inherit;
 }
 .review-workspace {
+  --queue-width: 320px;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: var(--queue-width) minmax(0, 1fr);
   flex: 1;
-  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
-  overflow: hidden;
-  background: var(--surface);
+  /* clip, not hidden: a scroll container here would pin the sticky queue and heading to a box
+     that never scrolls, instead of to the window. */
+  overflow: clip;
+  /* The queue column and its divider are painted by the workspace, so the column stays the
+     full height of the open submission however short the sticky queue itself is. */
+  background: linear-gradient(
+    to right,
+    #f5f1e9 var(--queue-width),
+    var(--line) var(--queue-width),
+    var(--line) calc(var(--queue-width) + 1px),
+    var(--surface) calc(var(--queue-width) + 1px)
+  );
 }
 .review-queue {
-  min-height: 0;
-  border-right: 1px solid var(--line);
+  position: sticky;
+  top: 64px;
+  align-self: start;
+  max-height: calc(100dvh - 64px);
   display: flex;
   flex-direction: column;
-  background: #f5f1e9;
 }
 .review-queue-tools {
   padding: 18px 16px 16px;
@@ -187,7 +199,6 @@
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-  overscroll-behavior: contain;
   /* Contain the absolutely positioned .sr-only labels inside each row; otherwise they escape
      the scroll area and stretch the whole page by one row-height per queued submission. */
   position: relative;
@@ -244,9 +255,7 @@
   gap: 4px;
 }
 .review-detail-scroll {
-  overflow-y: auto;
-  min-height: 0;
-  overscroll-behavior: contain;
+  min-width: 0;
   position: relative;
 }
 .review-detail-scroll > .community-notice {
@@ -254,7 +263,7 @@
 }
 .review-detail-heading {
   position: sticky;
-  top: 0;
+  top: 64px;
   z-index: 10;
   padding: 22px 28px 16px;
   background: var(--surface);
@@ -556,7 +565,7 @@
     padding: 0 14px 14px;
   }
   .review-workspace {
-    grid-template-columns: 300px minmax(0, 1fr);
+    --queue-width: 300px;
   }
   .review-stats {
     gap: 8px;
@@ -617,10 +626,16 @@
   .review-workspace {
     display: flex;
     flex-direction: column;
+    background: #f5f1e9;
   }
+  /* One pane at a time on a phone, so the whole page scrolls through whichever is open. */
   .review-queue {
-    border: 0;
+    position: static;
+    max-height: none;
     flex: 1;
+  }
+  .review-queue-list {
+    overflow: visible;
   }
   .review-workspace[data-mobile-detail='true'] > .review-queue {
     display: none;
@@ -630,6 +645,7 @@
   }
   .review-detail-scroll {
     flex: 1;
+    background: var(--surface);
   }
   .review-mobile-back {
     display: inline-flex;
@@ -669,22 +685,6 @@
   }
   .review-public-preview {
     padding: 14px;
-  }
-}
-@media (max-height: 650px) {
-  .review-main {
-    height: auto;
-    min-height: calc(100dvh - 64px);
-  }
-  .review-workspace {
-    min-height: 60dvh;
-    overflow: visible;
-  }
-  .review-queue-list {
-    max-height: 70dvh;
-  }
-  .review-detail-heading {
-    position: static;
   }
 }
 .review-claim-heading {
