@@ -151,9 +151,13 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
           // Hover immediately changes the open record, but never moves the camera, steals focus,
           // or adds browser history entries. Keep it readable after leaving the pin.
           triggerRef.current = target.anchor;
-          const patch: Partial<ExploreState> =
-            liveState.current.panel === 'place' && target.placeId
-              ? { place: selection.place }
+          // Hover shows what a click would open: a single grave is its person, any other marker
+          // is the place itself, listed with everyone connected to it.
+          const occupant = soleOccupant(archive, target.placeId);
+          const patch: Partial<ExploreState> = occupant
+            ? { ...selection, person: occupant, panel: 'person' }
+            : target.placeId
+              ? { place: target.placeId, panel: 'place' }
               : { ...selection, panel: 'person' };
           if (
             liveState.current.person !== (patch.person ?? liveState.current.person) ||
@@ -582,10 +586,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                   resetEpoch={resetEpoch}
                   focusSelection={focusSelection}
                   onSelect={(_personId, placeId) => {
+                    // Same rule as the hover preview: a single grave opens its person, any other
+                    // marker opens the place, with a way back when a person was already open.
                     const occupant = soleOccupant(archive, placeId);
-                    if (selected && (!occupant || occupant === selected.id))
-                      openPlace(placeId, selected.id);
-                    else if (occupant) selectPerson(occupant, placeId);
+                    if (occupant) selectPerson(occupant, placeId);
+                    else if (selected) openPlace(placeId, selected.id);
                     else selectPlace(placeId);
                   }}
                   onPreview={onPreview}
