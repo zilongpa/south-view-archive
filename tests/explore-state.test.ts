@@ -20,6 +20,7 @@ test('a shareable URL restores filters, selection, scope, and a useful map viewp
     theme: 'Faith & Community',
     person: 'martin-luther-king-sr',
     place: 'ebenezer-heritage',
+    panel: 'person',
     embed: false,
     viewport: { lng: -84.374046, lat: 33.755268, zoom: 14.567 },
   };
