@@ -188,6 +188,9 @@
   flex: 1;
   min-height: 0;
   overscroll-behavior: contain;
+  /* Contain the absolutely positioned .sr-only labels inside each row; otherwise they escape
+     the scroll area and stretch the whole page by one row-height per queued submission. */
+  position: relative;
 }
 .review-queue-item {
   display: flex;
