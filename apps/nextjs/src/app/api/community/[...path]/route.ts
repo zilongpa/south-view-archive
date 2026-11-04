@@ -12,8 +12,12 @@ import {
   submissionInputSchema,
   photoMetadataSchema,
   reviewInputSchema,
+  staffIssueCreateSchema,
+  staffIssueSchema,
   staffLinkCreateSchema,
   staffLinkEditSchema,
+  staffMaterialCreateSchema,
+  staffMaterialSchema,
   staffPersonEditSchema,
   staffPlaceEditSchema,
   staffRemoveSchema,
@@ -255,6 +259,40 @@ async function handle(request: Request, context: Context): Promise<Response> {
       if (area === 'links' && id && action === 'remove' && method === 'POST') {
         const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
         return json(await staffEdits.removeLink(id, reason, actor));
+      }
+      if (area === 'materials' && !id && method === 'POST')
+        return json(
+          await staffEdits.createMaterial(
+            staffMaterialCreateSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
+        );
+      if (area === 'materials' && id && !action && method === 'POST')
+        return json(
+          await staffEdits.editMaterial(
+            id,
+            staffMaterialSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
+        );
+      if (area === 'materials' && id && action === 'remove' && method === 'POST') {
+        const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
+        return json(await staffEdits.removeMaterial(id, reason, actor));
+      }
+      if (area === 'issues' && !id && method === 'POST')
+        return json(
+          await staffEdits.createIssue(
+            staffIssueCreateSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
+        );
+      if (area === 'issues' && id && !action && method === 'POST')
+        return json(
+          await staffEdits.editIssue(id, staffIssueSchema.parse(await bodyJSON(request)), actor),
+        );
+      if (area === 'issues' && id && action === 'remove' && method === 'POST') {
+        const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
+        return json(await staffEdits.removeIssue(id, reason, actor));
       }
       if (area === 'edits' && id && action === 'undo' && method === 'POST') {
         const { reason } = staffRemoveSchema.parse(await bodyJSON(request));

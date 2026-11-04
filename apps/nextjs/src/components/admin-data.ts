@@ -1,15 +1,29 @@
 'use client';
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { ArchiveData, Person, PersonPlace, Place, StaffEdit } from '@southview/validators';
+import type {
+  ArchiveData,
+  Material,
+  Person,
+  PersonPlace,
+  Place,
+  Source,
+  StaffEdit,
+} from '@southview/validators';
+
+type Issue = ArchiveData['issues'][number];
 
 type Overrides = Record<string, Record<string, unknown> | null>;
 const key = (table: string, id: string) => `${table}:${id}`;
 
-function merge<T extends { id: string }>(rows: T[], table: string, overrides: Overrides): T[] {
+function merge<T extends { id?: string }>(rows: T[], table: string, overrides: Overrides): T[] {
   const seen = new Set<string>();
   const result: T[] = [];
   for (const row of rows) {
+    if (!row.id) {
+      result.push(row);
+      continue;
+    }
     seen.add(row.id);
     const override = overrides[key(table, row.id)];
     if (override === undefined) result.push(row);
@@ -36,6 +50,9 @@ export function useAdminArchive(archive: ArchiveData) {
       people: merge<Person>(archive.people, 'persons', overrides),
       places: merge<Place>(archive.places, 'places', overrides),
       relations: merge<PersonPlace>(archive.relations, 'person_places', overrides),
+      materials: merge<Material>(archive.materials, 'materials', overrides),
+      sources: merge<Source>(archive.sources, 'sources', overrides),
+      issues: merge<Issue>(archive.issues, 'issues', overrides),
     }),
     [archive, overrides],
   );
@@ -44,7 +61,11 @@ export function useAdminArchive(archive: ArchiveData) {
       if (!edits.length) return;
       setOverrides((current) => {
         const next = { ...current };
-        for (const edit of edits) next[key(edit.targetTable, edit.targetId)] = edit.next;
+        // Issue rows keep their identifier outside the stored data; carry it on every row.
+        for (const edit of edits)
+          next[key(edit.targetTable, edit.targetId)] = edit.next
+            ? { ...edit.next, id: edit.targetId }
+            : null;
         return next;
       });
       router.refresh();

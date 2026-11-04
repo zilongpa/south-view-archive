@@ -102,6 +102,8 @@ export const materialSchema = z.object({
   date: z.string().optional(),
 });
 export const issueSchema = z.object({
+  /** The stored row's identifier, added when the archive is read. Not part of the stored data. */
+  id: z.string().optional(),
   personId: z.string(),
   field: z.string(),
   note: z.string(),

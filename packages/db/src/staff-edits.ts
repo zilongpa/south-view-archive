@@ -8,20 +8,31 @@ import {
   placeSchema,
   relationSchema,
   sourceSchema,
+  staffIssueCreateSchema,
+  staffIssueSchema,
   staffLinkCreateSchema,
   staffLinkEditSchema,
+  staffMaterialCreateSchema,
+  staffMaterialSchema,
   staffPersonEditSchema,
   staffPlaceEditSchema,
   staffReasonSchema,
   type Actor,
+  type Material,
   type Person,
   type PersonPlace,
   type Place,
+  type Source,
   type StaffEdit,
+  type StaffIssue,
+  type StaffIssueCreate,
   type StaffLinkCreate,
   type StaffLinkEdit,
+  type StaffMaterial,
+  type StaffMaterialCreate,
   type StaffPersonEdit,
   type StaffPlaceEdit,
+  type StaffSourceLink,
 } from '@southview/validators';
 import type { Store } from './connection';
 import { DomainError, requireReviewer, writableStore } from './community';
@@ -345,9 +356,211 @@ export async function removeLink(linkId: string, rawReason: string, actor: Actor
   });
 }
 
+async function checkRelated(
+  tx: Store,
+  personId: string,
+  related: { relatedPersonIds: string[]; placeIds: string[] },
+) {
+  if (related.relatedPersonIds.includes(personId))
+    throw new DomainError('BAD_REQUEST', 'A record cannot list its own person as related.');
+  for (const id of related.relatedPersonIds)
+    await existing(tx, 'persons', id, 'A related person is no longer in the archive.');
+  for (const id of related.placeIds)
+    await existing(tx, 'places', id, 'A related place is no longer in the archive.');
+}
+
+/** Copies a link's fields onto a source, leaving out the optional ones left blank. */
+function withLink(source: Data, link: StaffSourceLink, fallbackTitle: string): Data {
+  const next: Data = {
+    ...source,
+    title: link.title || fallbackTitle,
+    creator: link.creator,
+    publisher: link.publisher,
+    url: link.url,
+  };
+  if (link.rights) next.rights = link.rights;
+  else delete next.rights;
+  return next;
+}
+
 /**
- * Staff changes about one person (their record and their place connections) or one place (the
- * place and everyone's connections to it), newest first.
+ * Resolves the source a record cites: an existing one (with any corrections to its link written
+ * first) or a new one made from a pasted link. Returns its id and the rows to write before the
+ * record itself.
+ */
+async function materialSource(
+  tx: Store,
+  input: StaffMaterial,
+): Promise<{ sourceId: string; changes: StaffChange[] }> {
+  const { source, material } = input;
+  if (source.mode === 'new') {
+    const created = sourceSchema.parse(
+      withLink(
+        {
+          id: `source-${randomUUID()}`,
+          accessedAt: new Date().toISOString().slice(0, 10),
+          kind: material.kind,
+          creditIds: ['initial-compilation'],
+        },
+        source.link,
+        material.title,
+      ),
+    );
+    return {
+      sourceId: created.id,
+      changes: [{ table: 'sources', id: created.id, next: created }],
+    };
+  }
+  const current = await existing<Source>(
+    tx,
+    'sources',
+    source.sourceId,
+    'Choose a source that is in the archive.',
+  );
+  if (!source.link) return { sourceId: current.id, changes: [] };
+  if (current.kind === 'community-contribution')
+    throw new DomainError(
+      'BAD_REQUEST',
+      'A contribution’s own source cannot be relinked. Choose or paste a different link instead.',
+    );
+  const next = sourceSchema.parse(withLink(current, source.link, material.title));
+  return { sourceId: current.id, changes: [{ table: 'sources', id: current.id, next }] };
+}
+
+function materialData(base: Data, input: StaffMaterial, sourceId: string): Material {
+  const { material } = input;
+  const next: Data = {
+    ...base,
+    title: material.title,
+    kind: material.kind,
+    description: material.description,
+    eventDate: material.eventDate,
+    relatedPersonIds: material.relatedPersonIds,
+    placeIds: material.placeIds,
+    sourceId,
+  };
+  for (const field of ['narrator', 'interviewer', 'date'] as const) {
+    if (material[field]) next[field] = material[field];
+    else delete next[field];
+  }
+  return materialSchema.parse(next);
+}
+
+/**
+ * Adds a record or oral history to a person's page. It links to the collection holding it: an
+ * archive source already in use, or a new link pasted by staff.
+ */
+export async function createMaterial(raw: StaffMaterialCreate, actor: Actor) {
+  const input = staffMaterialCreateSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    await existing(tx, 'persons', input.personId, 'This person is not in the archive.');
+    await checkRelated(tx, input.personId, input.material);
+    const source = await materialSource(tx, input);
+    const material = materialData(
+      {
+        id: `material-${randomUUID()}`,
+        personId: input.personId,
+        creditIds: ['initial-compilation'],
+      },
+      input,
+      source.sourceId,
+    );
+    return {
+      result: { material },
+      reason: input.reason,
+      changes: [...source.changes, { table: 'materials', id: material.id, next: material }],
+    };
+  });
+}
+
+/** Corrects a record or oral history, and optionally the link to the collection holding it. */
+export async function editMaterial(materialId: string, raw: StaffMaterial, actor: Actor) {
+  const input = staffMaterialSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    const current = await existing<Material>(
+      tx,
+      'materials',
+      materialId,
+      'This record is not in the archive.',
+    );
+    await checkRelated(tx, current.personId, input.material);
+    const source = await materialSource(tx, input);
+    const material = materialData(current, input, source.sourceId);
+    return {
+      result: { material },
+      reason: input.reason,
+      changes: [...source.changes, { table: 'materials', id: materialId, next: material }],
+    };
+  });
+}
+
+/** Takes a record or oral history off the person's page. The source it cited stays. */
+export async function removeMaterial(materialId: string, rawReason: string, actor: Actor) {
+  const reason = staffReasonSchema.parse(rawReason);
+  return staffAction(actor, async (tx) => {
+    await existing(tx, 'materials', materialId, 'This record is not in the archive.');
+    return { result: {}, reason, changes: [{ table: 'materials', id: materialId, next: null }] };
+  });
+}
+
+async function issueData(tx: Store, personId: string, input: StaffIssue): Promise<Data> {
+  for (const id of input.sourceIds)
+    await existing(tx, 'sources', id, 'Choose sources that are in the archive.');
+  return issueSchema.parse({
+    personId,
+    field: input.field,
+    note: input.note,
+    sourceIds: input.sourceIds,
+  });
+}
+
+/** Adds a public note to a person's record, for example where sources disagree about a date. */
+export async function createIssue(raw: StaffIssueCreate, actor: Actor) {
+  const input = staffIssueCreateSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    await existing(tx, 'persons', input.personId, 'This person is not in the archive.');
+    const id = `issue-${randomUUID()}`;
+    const issue = await issueData(tx, input.personId, input);
+    return {
+      result: { issue: { ...issue, id } },
+      reason: input.reason,
+      changes: [{ table: 'issues', id, next: issue }],
+    };
+  });
+}
+
+/** Rewrites a note on a person's record and the sources it cites. */
+export async function editIssue(issueId: string, raw: StaffIssue, actor: Actor) {
+  const input = staffIssueSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    const current = await existing<{ personId: string }>(
+      tx,
+      'issues',
+      issueId,
+      'This note is not in the archive.',
+    );
+    const issue = await issueData(tx, current.personId, input);
+    return {
+      result: { issue: { ...issue, id: issueId } },
+      reason: input.reason,
+      changes: [{ table: 'issues', id: issueId, next: issue }],
+    };
+  });
+}
+
+/** Takes a note off a person's record. */
+export async function removeIssue(issueId: string, rawReason: string, actor: Actor) {
+  const reason = staffReasonSchema.parse(rawReason);
+  return staffAction(actor, async (tx) => {
+    await existing(tx, 'issues', issueId, 'This note is not in the archive.');
+    return { result: {}, reason, changes: [{ table: 'issues', id: issueId, next: null }] };
+  });
+}
+
+/**
+ * Staff changes about one person (their record, place connections, records and notes) or one
+ * place (the place and everyone's connections to it), newest first. A person's history also
+ * includes corrections to the collection links their records cite.
  */
 export async function listStaffEdits(
   target: { personId: string } | { placeId: string },
@@ -355,13 +568,18 @@ export async function listStaffEdits(
 ): Promise<StaffEdit[]> {
   requireReviewer(actor);
   const store = await writableStore();
-  const [own, field, id] =
+  const [own, field, id, children] =
     'personId' in target
-      ? (['persons', 'personId', target.personId] as const)
-      : (['places', 'placeId', target.placeId] as const);
+      ? ([
+          'persons',
+          'personId',
+          target.personId,
+          ['person_places', 'materials', 'issues'],
+        ] as const)
+      : (['places', 'placeId', target.placeId, ['person_places']] as const);
   const rows = await store.query<EditRow>(
-    `${editSelect} WHERE (e.target_table = $1 AND e.target_id = $3) OR (e.target_table = 'person_places' AND (e.previous_data->>$2 = $3 OR e.next_data->>$2 = $3)) ORDER BY e.sequence DESC LIMIT 200`,
-    [own, field, id],
+    `WITH matched AS (SELECT DISTINCT batch_id FROM community.staff_edits WHERE (target_table = $1 AND target_id = $3) OR (target_table = ANY($4::text[]) AND (previous_data->>$2 = $3 OR next_data->>$2 = $3)) OR (target_table = 'sources' AND $1 = 'persons' AND target_id IN (SELECT source_id FROM archive.materials WHERE person_id = $3))) ${editSelect} WHERE e.batch_id IN (SELECT batch_id FROM matched) ORDER BY e.sequence DESC LIMIT 200`,
+    [own, field, id, `{${children.join(',')}}`],
   );
   return rows.rows.map(toEdit);
 }
