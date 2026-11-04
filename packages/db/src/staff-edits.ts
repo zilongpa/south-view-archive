@@ -1,44 +1,68 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
+  contributionEntrySchema,
+  issueSchema,
+  materialSchema,
   personSchema,
+  placeSchema,
+  relationSchema,
+  sourceSchema,
+  staffLinkCreateSchema,
+  staffLinkEditSchema,
   staffPersonEditSchema,
+  staffPlaceEditSchema,
   staffReasonSchema,
   type Actor,
   type Person,
+  type PersonPlace,
+  type Place,
   type StaffEdit,
+  type StaffLinkCreate,
+  type StaffLinkEdit,
   type StaffPersonEdit,
+  type StaffPlaceEdit,
 } from '@southview/validators';
 import type { Store } from './connection';
-import { DomainError, requireReviewer, validCuratedRecord, writableStore } from './community';
+import { DomainError, requireReviewer, writableStore } from './community';
 import { revertChange } from './revert';
 
-type EditTable = StaffEdit['targetTable'];
+type Table = StaffEdit['targetTable'];
+type Data = Record<string, unknown>;
+/** One row a staff action writes: `next` null removes the row. */
+export type StaffChange = { table: Table; id: string; next: Data | null };
 type EditRow = {
   id: string;
-  target_table: EditTable;
+  batch_id: string;
+  target_table: Table;
   target_id: string;
   reason: string;
-  previous_data: Record<string, unknown> | null;
-  next_data: Record<string, unknown> | null;
+  previous_data: Data | null;
+  next_data: Data | null;
   undo_of: string | null;
   undone_at: Date | string | null;
   created_at: Date | string;
   actor_email: string | null;
 };
-const editSelect = `SELECT e.id, e.target_table, e.target_id, e.reason, e.previous_data, e.next_data, e.undo_of, e.undone_at, e.created_at, u.email AS actor_email FROM community.staff_edits e LEFT JOIN community.auth_user u ON u.id = e.actor_id`;
+const editSelect = `SELECT e.id, e.batch_id, e.target_table, e.target_id, e.reason, e.previous_data, e.next_data, e.undo_of, e.undone_at, e.created_at, u.email AS actor_email FROM community.staff_edits e LEFT JOIN community.auth_user u ON u.id = e.actor_id`;
+const schemas = {
+  persons: personSchema,
+  places: placeSchema,
+  person_places: relationSchema,
+  materials: materialSchema,
+  sources: sourceSchema,
+  issues: issueSchema,
+  contributions: contributionEntrySchema,
+} as const;
 
-function changedFields(
-  previous: Record<string, unknown> | null,
-  next: Record<string, unknown> | null,
-) {
+function changedFields(previous: Data | null, next: Data | null) {
   const keys = new Set([...Object.keys(previous ?? {}), ...Object.keys(next ?? {})]);
   return [...keys].filter((key) => !isDeepStrictEqual(previous?.[key], next?.[key])).sort();
 }
-
 function toEdit(row: EditRow): StaffEdit {
   return {
     id: row.id,
+    batchId: row.batch_id,
     targetTable: row.target_table,
     targetId: row.target_id,
     reason: row.reason,
@@ -52,60 +76,159 @@ function toEdit(row: EditRow): StaffEdit {
   };
 }
 
-async function recordEdit(
-  tx: Store,
-  actor: Actor,
-  table: EditTable,
-  targetId: string,
-  reason: string,
-  previous: Record<string, unknown> | null,
-  next: Record<string, unknown> | null,
-  undoOf: string | null = null,
-) {
-  const id = randomUUID();
-  await tx.query(
-    'INSERT INTO community.staff_edits (id, actor_id, target_table, target_id, reason, previous_data, next_data, undo_of) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8)',
-    [
-      id,
-      actor.userId,
-      table,
-      targetId,
-      reason,
-      previous === null ? null : JSON.stringify(previous),
-      next === null ? null : JSON.stringify(next),
-      undoOf,
-    ],
+async function readRow(tx: Store, table: Table, id: string): Promise<Data | null> {
+  return (
+    (
+      await tx.query<{ data: Data }>(`SELECT data FROM archive.${table} WHERE id = $1 FOR UPDATE`, [
+        id,
+      ])
+    ).rows[0]?.data ?? null
   );
-  return id;
 }
 
-async function editById(tx: Store, id: string) {
-  const row = (await tx.query<EditRow>(`${editSelect} WHERE e.id = $1`, [id])).rows[0];
-  if (!row) throw new DomainError('NOT_FOUND', 'This change is not in the history.');
-  return toEdit(row);
+function checkRecord(table: Table, data: Data) {
+  const parsed = schemas[table].safeParse(data);
+  if (!parsed.success)
+    throw new DomainError(
+      'BAD_REQUEST',
+      parsed.error.issues[0]?.message ?? 'This change would leave the record incomplete.',
+    );
+  if (table === 'places') {
+    const place = parsed.data as Place;
+    if ((place.coordinates === null) !== (place.precision === 'unmapped'))
+      throw new DomainError(
+        'BAD_REQUEST',
+        'Choose “Not yet mapped” only for a place without a map position, and a precision for one with a position.',
+      );
+    if (
+      place.coordinates &&
+      (place.coordinates[0] < -84.65 ||
+        place.coordinates[0] > -84.1 ||
+        place.coordinates[1] < 33.5 ||
+        place.coordinates[1] > 33.95)
+    )
+      throw new DomainError('BAD_REQUEST', 'Place positions must be in metropolitan Atlanta.');
+  }
+}
+
+async function writeRow(tx: Store, table: Table, id: string, data: Data | null) {
+  if (data === null) {
+    try {
+      await tx.query(`DELETE FROM archive.${table} WHERE id = $1`, [id]);
+    } catch {
+      throw new DomainError(
+        'CONFLICT',
+        'Other records still depend on this one. Remove or move them first.',
+      );
+    }
+    return;
+  }
+  const json = JSON.stringify(data);
+  if (table === 'person_places')
+    await tx.query(
+      'INSERT INTO archive.person_places (id, person_id, place_id, data) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (id) DO UPDATE SET person_id=EXCLUDED.person_id, place_id=EXCLUDED.place_id, data=EXCLUDED.data',
+      [id, data.personId, data.placeId, json],
+    );
+  else if (table === 'materials')
+    await tx.query(
+      'INSERT INTO archive.materials (id, person_id, source_id, data) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (id) DO UPDATE SET person_id=EXCLUDED.person_id, source_id=EXCLUDED.source_id, data=EXCLUDED.data',
+      [id, data.personId, data.sourceId, json],
+    );
+  else if (table === 'contributions')
+    await tx.query(
+      'INSERT INTO archive.contributions (id, person_id, credit_id, data) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (id) DO UPDATE SET person_id=EXCLUDED.person_id, credit_id=EXCLUDED.credit_id, data=EXCLUDED.data',
+      [id, data.personId, data.creditId, json],
+    );
+  else if (table === 'issues')
+    await tx.query(
+      'INSERT INTO archive.issues (id, person_id, data) VALUES ($1,$2,$3::jsonb) ON CONFLICT (id) DO UPDATE SET person_id=EXCLUDED.person_id, data=EXCLUDED.data',
+      [id, data.personId, json],
+    );
+  else
+    await tx.query(
+      `INSERT INTO archive.${table} (id, data) VALUES ($1,$2::jsonb) ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`,
+      [id, json],
+    );
 }
 
 /**
- * Corrects a person's own fields (name, other names, years, themes, summary) directly, without a
- * contribution. The change is recorded with the staff member's reason and can be undone.
+ * Writes one staff action, row by row in the given order, and records every row in one batch
+ * with the reason. Rows whose content does not change are skipped. Returns null when nothing
+ * changed. Parents must come before children when inserting, and after them when removing.
  */
-export async function editPerson(
-  personId: string,
-  raw: StaffPersonEdit,
+export async function applyStaffChanges(
+  tx: Store,
   actor: Actor,
-): Promise<{ person: Person; edit: StaffEdit | null }> {
+  reason: string,
+  changes: StaffChange[],
+  undoOf: Map<string, string> = new Map(),
+): Promise<string | null> {
+  const batchId = randomUUID();
+  let wrote = false;
+  for (const change of changes) {
+    const previous = await readRow(tx, change.table, change.id);
+    if (change.next === null && previous === null) continue;
+    if (change.next !== null) {
+      if (change.next.id !== undefined && change.next.id !== change.id && change.table !== 'issues')
+        throw new DomainError('BAD_REQUEST', 'A record cannot change its identifier.');
+      checkRecord(change.table, change.next);
+      if (previous && isDeepStrictEqual(previous, change.next)) continue;
+    }
+    await writeRow(tx, change.table, change.id, change.next);
+    await tx.query(
+      'INSERT INTO community.staff_edits (id, batch_id, actor_id, target_table, target_id, reason, previous_data, next_data, undo_of) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)',
+      [
+        randomUUID(),
+        batchId,
+        actor.userId,
+        change.table,
+        change.id,
+        reason,
+        previous === null ? null : JSON.stringify(previous),
+        change.next === null ? null : JSON.stringify(change.next),
+        undoOf.get(`${change.table}:${change.id}`) ?? null,
+      ],
+    );
+    wrote = true;
+  }
+  return wrote ? batchId : null;
+}
+
+async function batchEdits(tx: Store, batchId: string | null) {
+  if (!batchId) return [];
+  return (
+    await tx.query<EditRow>(`${editSelect} WHERE e.batch_id = $1 ORDER BY e.sequence`, [batchId])
+  ).rows.map(toEdit);
+}
+async function staffAction<T>(
+  actor: Actor,
+  run: (tx: Store) => Promise<{ result: T; reason: string; changes: StaffChange[] }>,
+): Promise<T & { edits: StaffEdit[] }> {
   requireReviewer(actor);
-  const { patch, reason } = staffPersonEditSchema.parse(raw);
   const store = await writableStore();
   return store.transaction(async (tx) => {
-    const current = (
-      await tx.query<{ data: Person }>(
-        'SELECT data FROM archive.persons WHERE id = $1 FOR NO KEY UPDATE',
-        [personId],
-      )
-    ).rows[0]?.data;
-    if (!current) throw new DomainError('NOT_FOUND', 'This person is not in the archive.');
-    const next: Record<string, unknown> = { ...current };
+    const { result, reason, changes } = await run(tx);
+    const batchId = await applyStaffChanges(tx, actor, reason, changes);
+    return { ...result, edits: await batchEdits(tx, batchId) };
+  });
+}
+async function existing<T>(tx: Store, table: Table, id: string, missing: string): Promise<T> {
+  const data = await readRow(tx, table, id);
+  if (!data) throw new DomainError('NOT_FOUND', missing);
+  return data as T;
+}
+
+/** Corrects a person's own fields: name, other names, years, themes, summary. */
+export async function editPerson(personId: string, raw: StaffPersonEdit, actor: Actor) {
+  const { patch, reason } = staffPersonEditSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    const current = await existing<Person>(
+      tx,
+      'persons',
+      personId,
+      'This person is not in the archive.',
+    );
+    const next: Data = { ...current };
     if (patch.name !== undefined) next.name = patch.name;
     if (patch.aliases !== undefined) next.aliases = patch.aliases;
     if (patch.themes !== undefined) next.themes = patch.themes;
@@ -122,100 +245,190 @@ export async function editPerson(
     )
       throw new DomainError('BAD_REQUEST', 'The birth year must not be after the death year.');
     const person = personSchema.parse(next);
-    if (isDeepStrictEqual(person, personSchema.parse(current))) return { person, edit: null };
-    await tx.query('UPDATE archive.persons SET data = $2::jsonb WHERE id = $1', [
-      personId,
-      JSON.stringify(person),
-    ]);
-    const id = await recordEdit(
-      tx,
-      actor,
-      'persons',
-      personId,
+    return {
+      result: { person },
       reason,
-      current as unknown as Record<string, unknown>,
-      person as unknown as Record<string, unknown>,
-    );
-    return { person, edit: await editById(tx, id) };
+      changes: [{ table: 'persons', id: personId, next: person }],
+    };
   });
 }
 
-/** Staff changes to one record, newest first. */
+/** Corrects a map place: name, area, address, position, precision, location note, description. */
+export async function editPlace(placeId: string, raw: StaffPlaceEdit, actor: Actor) {
+  const { patch, reason } = staffPlaceEditSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    const current = await existing<Place>(
+      tx,
+      'places',
+      placeId,
+      'This place is not in the archive.',
+    );
+    const next: Data = { ...current };
+    for (const field of ['name', 'scope', 'precision', 'locationNote', 'summary'] as const)
+      if (patch[field] !== undefined) next[field] = patch[field];
+    if (patch.address !== undefined) {
+      if (patch.address) next.address = patch.address;
+      else delete next.address;
+    }
+    if (patch.coordinates !== undefined) {
+      next.coordinates = patch.coordinates;
+      // Citations for a position no longer on the map would describe nothing.
+      if (patch.coordinates === null) next.coordinateCitations = [];
+    }
+    const place = placeSchema.parse(next);
+    return { result: { place }, reason, changes: [{ table: 'places', id: placeId, next: place }] };
+  });
+}
+
+/** Corrects how a person is connected to a place: the relationship label and its description. */
+export async function editLink(linkId: string, raw: StaffLinkEdit, actor: Actor) {
+  const { patch, reason } = staffLinkEditSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    const current = await existing<PersonPlace>(
+      tx,
+      'person_places',
+      linkId,
+      'This connection is not in the archive.',
+    );
+    const link = relationSchema.parse({
+      ...current,
+      ...(patch.label !== undefined ? { label: patch.label } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+    });
+    return {
+      result: { link },
+      reason,
+      changes: [{ table: 'person_places', id: linkId, next: link }],
+    };
+  });
+}
+
+/** Connects a person to a place already on the map. */
+export async function createLink(raw: StaffLinkCreate, actor: Actor) {
+  const input = staffLinkCreateSchema.parse(raw);
+  return staffAction(actor, async (tx) => {
+    await existing(tx, 'persons', input.personId, 'This person is not in the archive.');
+    await existing(tx, 'places', input.placeId, 'This place is not in the archive.');
+    await existing(tx, 'sources', input.sourceId, 'Choose a source that is in the archive.');
+    const duplicate = await tx.query(
+      'SELECT id FROM archive.person_places WHERE person_id = $1 AND place_id = $2 LIMIT 1',
+      [input.personId, input.placeId],
+    );
+    if (duplicate.rows.length)
+      throw new DomainError(
+        'CONFLICT',
+        'This person is already connected to this place. Edit that connection instead.',
+      );
+    const link = relationSchema.parse({
+      id: `link-${randomUUID()}`,
+      personId: input.personId,
+      placeId: input.placeId,
+      label: input.label,
+      description: input.description,
+      citations: [{ sourceId: input.sourceId }],
+      creditIds: ['initial-compilation'],
+    });
+    return {
+      result: { link },
+      reason: input.reason,
+      changes: [{ table: 'person_places', id: link.id, next: link }],
+    };
+  });
+}
+
+/** Removes a person's connection to a place. The place itself stays on the map. */
+export async function removeLink(linkId: string, rawReason: string, actor: Actor) {
+  const reason = staffReasonSchema.parse(rawReason);
+  return staffAction(actor, async (tx) => {
+    await existing(tx, 'person_places', linkId, 'This connection is not in the archive.');
+    return { result: {}, reason, changes: [{ table: 'person_places', id: linkId, next: null }] };
+  });
+}
+
+/**
+ * Staff changes about one person (their record and their place connections) or one place (the
+ * place and everyone's connections to it), newest first.
+ */
 export async function listStaffEdits(
-  target: { table: EditTable; id: string },
+  target: { personId: string } | { placeId: string },
   actor: Actor,
 ): Promise<StaffEdit[]> {
   requireReviewer(actor);
   const store = await writableStore();
+  const [own, field, id] =
+    'personId' in target
+      ? (['persons', 'personId', target.personId] as const)
+      : (['places', 'placeId', target.placeId] as const);
   const rows = await store.query<EditRow>(
-    `${editSelect} WHERE e.target_table = $1 AND e.target_id = $2 ORDER BY e.sequence DESC LIMIT 100`,
-    [target.table, target.id],
+    `${editSelect} WHERE (e.target_table = $1 AND e.target_id = $3) OR (e.target_table = 'person_places' AND (e.previous_data->>$2 = $3 OR e.next_data->>$2 = $3)) ORDER BY e.sequence DESC LIMIT 200`,
+    [own, field, id],
   );
   return rows.rows.map(toEdit);
 }
 
 /**
- * Undoes one staff change. Only the fields that still hold what that change wrote go back;
- * anything changed since, by staff or by a published contribution, is kept.
+ * Undoes the staff action an entry belongs to, all its rows together. Edited fields go back only
+ * where they still hold what the action wrote; a removed row comes back; an added row goes away
+ * unless it has been changed since.
  */
-export async function undoStaffEdit(
-  editId: string,
-  rawReason: string,
-  actor: Actor,
-): Promise<{ edit: StaffEdit; undone: StaffEdit }> {
+export async function undoStaffEdit(editId: string, rawReason: string, actor: Actor) {
   requireReviewer(actor);
   const reason = staffReasonSchema.parse(rawReason);
   const store = await writableStore();
   return store.transaction(async (tx) => {
-    const original = (
-      await tx.query<EditRow>(`${editSelect} WHERE e.id = $1 FOR UPDATE OF e`, [editId])
-    ).rows[0];
-    if (!original) throw new DomainError('NOT_FOUND', 'This change is not in the history.');
-    if (original.undone_at) throw new DomainError('CONFLICT', 'This change was already undone.');
-    if (original.undo_of)
+    const entry = (await tx.query<EditRow>(`${editSelect} WHERE e.id = $1`, [editId])).rows[0];
+    if (!entry) throw new DomainError('NOT_FOUND', 'This change is not in the history.');
+    const rows = (
+      await tx.query<EditRow>(
+        `${editSelect} WHERE e.batch_id = $1 ORDER BY e.sequence DESC FOR UPDATE OF e`,
+        [entry.batch_id],
+      )
+    ).rows;
+    if (rows.some((row) => row.undone_at))
+      throw new DomainError('CONFLICT', 'This change was already undone.');
+    if (rows.some((row) => row.undo_of))
       throw new DomainError(
         'CONFLICT',
         'This entry is itself an undo. Make a new correction instead.',
       );
-    const table = original.target_table;
-    if (table === 'materials')
-      throw new DomainError('BAD_REQUEST', 'Undoing this kind of change is not supported yet.');
-    const current =
-      (
-        await tx.query<{ data: Record<string, unknown> }>(
-          `SELECT data FROM archive.${table} WHERE id = $1 FOR NO KEY UPDATE`,
-          [original.target_id],
-        )
-      ).rows[0]?.data ?? null;
-    if (!current || !original.previous_data || !original.next_data)
-      throw new DomainError('CONFLICT', 'This record has been removed since; it cannot be undone.');
-    const restored = revertChange(original.previous_data, original.next_data, current) as Record<
-      string,
-      unknown
-    >;
-    if (!validCuratedRecord(table, restored))
-      throw new DomainError(
-        'CONFLICT',
-        'Later changes to this record cannot be separated from this one. Correct the record directly instead.',
-      );
-    if (!isDeepStrictEqual(restored, current))
-      await tx.query(`UPDATE archive.${table} SET data = $2::jsonb WHERE id = $1`, [
-        original.target_id,
-        JSON.stringify(restored),
-      ]);
-    const id = await recordEdit(
-      tx,
-      actor,
-      table,
-      original.target_id,
-      reason,
-      current,
-      restored,
-      original.id,
-    );
-    await tx.query('UPDATE community.staff_edits SET undone_at = now() WHERE id = $1', [
-      original.id,
+    const changes: StaffChange[] = [];
+    const undoOf = new Map<string, string>();
+    for (const row of rows) {
+      const current = await readRow(tx, row.target_table, row.target_id);
+      let next: Data | null;
+      if (row.previous_data === null) {
+        // The action added this row: take it away again, unless someone has edited it since.
+        if (current && !isDeepStrictEqual(current, row.next_data))
+          throw new DomainError(
+            'CONFLICT',
+            'A record this change added has been edited since. Remove it directly instead.',
+          );
+        next = null;
+      } else if (row.next_data === null) {
+        // The action removed this row: put it back, unless it has been recreated since.
+        if (current)
+          throw new DomainError('CONFLICT', 'A record this change removed exists again.');
+        next = row.previous_data;
+      } else {
+        if (!current)
+          throw new DomainError(
+            'CONFLICT',
+            'This record has been removed since; it cannot be undone.',
+          );
+        next = revertChange(row.previous_data, row.next_data, current) as Data;
+        if (!schemas[row.target_table].safeParse(next).success)
+          throw new DomainError(
+            'CONFLICT',
+            'Later changes to this record cannot be separated from this one. Correct the record directly instead.',
+          );
+      }
+      changes.push({ table: row.target_table, id: row.target_id, next });
+      undoOf.set(`${row.target_table}:${row.target_id}`, row.id);
+    }
+    const batchId = await applyStaffChanges(tx, actor, reason, changes, undoOf);
+    await tx.query('UPDATE community.staff_edits SET undone_at = now() WHERE batch_id = $1', [
+      entry.batch_id,
     ]);
-    return { edit: await editById(tx, id), undone: await editById(tx, original.id) };
+    return { edits: await batchEdits(tx, batchId), undone: await batchEdits(tx, entry.batch_id) };
   });
 }
