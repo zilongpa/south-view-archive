@@ -1,12 +1,18 @@
 'use client';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowUpRight, History, LoaderCircle, Search, Undo2, Users } from 'lucide-react';
-import type { ArchiveData, Person, StaffEdit, StaffPersonEdit } from '@southview/validators';
+import { useEffect, useState, type FormEvent } from 'react';
+import { ArrowLeft, ArrowUpRight, LoaderCircle, MapPin, Plus, Search, Users } from 'lucide-react';
+import type {
+  ArchiveData,
+  Person,
+  PersonPlace,
+  StaffEdit,
+  StaffPersonEdit,
+} from '@southview/validators';
 import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
+import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 
 type Fields = {
   name: string;
@@ -15,18 +21,6 @@ type Fields = {
   deathYear: string;
   themes: string;
   summary: string;
-};
-const fieldLabels: Record<string, string> = {
-  name: 'Public name',
-  aliases: 'Other names',
-  birthYear: 'Birth year',
-  deathYear: 'Death year',
-  themes: 'Themes',
-  summary: 'Summary',
-  summaryCitations: 'Summary sources',
-  biography: 'Story paragraphs',
-  portrait: 'Portrait',
-  creditIds: 'Credits',
 };
 const list = (value: string) =>
   value
@@ -55,43 +49,31 @@ function patchFor(fields: Fields, saved: Fields): StaffPersonEdit['patch'] {
       patch[key] = fields[key].trim() ? Number(fields[key].trim()) : null;
   return patch;
 }
-function shown(value: unknown) {
-  if (value === undefined || value === null || value === '') return '—';
-  if (Array.isArray(value))
-    return value.every((item) => typeof item === 'string')
-      ? value.join(', ') || '—'
-      : `${value.length} item${value.length === 1 ? '' : 's'}`;
-  if (typeof value === 'object') return 'changed';
-  return String(value);
-}
 const years = (person: Person) =>
   person.birthYear || person.deathYear
     ? `${person.birthYear ?? '?'} – ${person.deathYear ?? '?'}`
     : 'Years unknown';
+const errorText = (failure: unknown, fallback: string) =>
+  failure instanceof Error ? failure.message : fallback;
 
 export function PeopleAdmin({
   archive,
   initialPersonId,
   onPersonChange,
+  onOpenPlace,
+  onSaved,
   onDirtyChange,
   confirmLeave,
 }: {
   archive: ArchiveData;
   initialPersonId: string | null;
   onPersonChange: (personId: string | null) => void;
+  onOpenPlace: (placeId: string) => void;
+  onSaved: (edits: StaffEdit[]) => void;
   onDirtyChange: (dirty: boolean) => void;
   confirmLeave: () => boolean;
 }) {
-  const router = useRouter();
-  // Records saved here show at once, before the page's archive data refreshes.
-  const [saved, setSaved] = useState<Record<string, Person>>({});
-  const people = useMemo(
-    () =>
-      archive.people
-        .map((person) => saved[person.id] ?? person)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [archive.people, saved],
-  );
+  const people = [...archive.people].sort((a, b) => a.name.localeCompare(b.name));
   const [q, setQ] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(
     initialPersonId && people.some((person) => person.id === initialPersonId)
@@ -175,17 +157,24 @@ export function PeopleAdmin({
           <PersonEditor
             key={selected.id}
             person={selected}
+            archive={archive}
             onDirtyChange={onDirtyChange}
-            onSaved={(person) => {
-              setSaved((value) => ({ ...value, [person.id]: person }));
-              router.refresh();
+            onSaved={onSaved}
+            onOpenPlace={(placeId) => {
+              if (confirmLeave()) {
+                onDirtyChange(false);
+                onOpenPlace(placeId);
+              }
             }}
           />
         ) : (
           <div className="review-empty admin-empty">
             <Users size={28} aria-hidden="true" />
             <h3>Choose a person</h3>
-            <p>Correct names, other names, years, themes or the summary without a contribution.</p>
+            <p>
+              Correct names, other names, years, themes, the summary and place connections without a
+              contribution.
+            </p>
           </div>
         )}
       </div>
@@ -195,12 +184,16 @@ export function PeopleAdmin({
 
 function PersonEditor({
   person,
+  archive,
   onDirtyChange,
   onSaved,
+  onOpenPlace,
 }: {
   person: Person;
+  archive: ArchiveData;
   onDirtyChange: (dirty: boolean) => void;
-  onSaved: (person: Person) => void;
+  onSaved: (edits: StaffEdit[]) => void;
+  onOpenPlace: (placeId: string) => void;
 }) {
   const [savedFields, setSavedFields] = useState(() => fieldsFor(person));
   const [fields, setFields] = useState(savedFields);
@@ -208,8 +201,7 @@ function PersonEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [history, setHistory] = useState<StaffEdit[] | null>(null);
-  const [historyError, setHistoryError] = useState('');
+  const history = useStaffHistory(`/admin/persons/${encodeURIComponent(person.id)}`);
   const patch = patchFor(fields, savedFields);
   const changed = Object.keys(patch);
 
@@ -217,35 +209,22 @@ function PersonEditor({
     onDirtyChange(changed.length > 0 || !!reason.trim());
   }, [changed.length, reason, onDirtyChange]);
 
-  async function loadHistory() {
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/persons/${encodeURIComponent(person.id)}`,
-      );
-      setHistory(result.edits);
-      setHistoryError('');
-    } catch (failure) {
-      setHistoryError(
-        failure instanceof Error ? failure.message : 'The change history could not be loaded.',
-      );
-    }
-  }
-  useEffect(() => {
-    void loadHistory();
-  }, [person.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
   function edit(key: keyof Fields, value: string) {
     setFields((current) => ({ ...current, [key]: value }));
     setNotice('');
   }
-  function applySaved(next: Person, message: string) {
-    const nextFields = fieldsFor(next);
-    setSavedFields(nextFields);
-    setFields(nextFields);
-    setReason('');
+  /** After any saved change: show the record as stored, and refresh the history. */
+  function saved(edits: StaffEdit[], message: string) {
+    const record = edits.find((item) => item.targetTable === 'persons')?.next as Person | undefined;
+    if (record) {
+      const nextFields = fieldsFor(record);
+      setSavedFields(nextFields);
+      setFields(nextFields);
+      setReason('');
+    }
     setNotice(message);
-    onSaved(next);
-    void loadHistory();
+    onSaved(edits);
+    void history.reload();
   }
 
   async function save(event: FormEvent) {
@@ -267,18 +246,18 @@ function PersonEditor({
     }
     setBusy(true);
     try {
-      const result = await communityRequest<{ person: Person; edit: StaffEdit | null }>(
+      const result = await communityRequest<{ edits: StaffEdit[] }>(
         `/admin/persons/${encodeURIComponent(person.id)}`,
         { method: 'POST', body: JSON.stringify({ patch, reason: reason.trim() }) },
       );
-      applySaved(
-        result.person,
-        result.edit
+      saved(
+        result.edits,
+        result.edits.length
           ? 'Saved. The change is live and listed in the history below.'
           : 'Nothing changed.',
       );
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The change could not be saved.');
+      setError(errorText(failure, 'The change could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -387,11 +366,19 @@ function PersonEditor({
             )}
           </div>
         </form>
+        <PersonLinks
+          person={person}
+          archive={archive}
+          onOpenPlace={onOpenPlace}
+          onSaved={(edits, message) => saved(edits, message)}
+        />
         <ChangeHistory
-          history={history}
-          error={historyError}
-          onUndone={(next) =>
-            applySaved(next, 'Undone. The record is back as it was, apart from later changes.')
+          history={history.history}
+          error={history.error}
+          archive={archive}
+          note="Direct corrections to this person and their place connections. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
+          onUndone={(edits) =>
+            saved(edits, 'Undone. The record is back as it was, apart from later changes.')
           }
         />
       </div>
@@ -399,137 +386,305 @@ function PersonEditor({
   );
 }
 
-function ChangeHistory({
-  history,
-  error,
-  onUndone,
+/** Sources this person's record already cites, for a new connection to cite. */
+function personSources(person: Person, archive: ArchiveData) {
+  const ids = new Set([
+    ...person.summaryCitations.map((item) => item.sourceId),
+    ...person.biography.flatMap((block) => block.citations.map((item) => item.sourceId)),
+    ...archive.relations
+      .filter((item) => item.personId === person.id)
+      .flatMap((item) => item.citations.map((citation) => citation.sourceId)),
+    ...archive.materials.filter((item) => item.personId === person.id).map((item) => item.sourceId),
+  ]);
+  return archive.sources.filter((source) => ids.has(source.id));
+}
+
+function PersonLinks({
+  person,
+  archive,
+  onOpenPlace,
+  onSaved,
 }: {
-  history: StaffEdit[] | null;
-  error: string;
-  onUndone: (person: Person) => void;
+  person: Person;
+  archive: ArchiveData;
+  onOpenPlace: (placeId: string) => void;
+  onSaved: (edits: StaffEdit[], message: string) => void;
 }) {
-  const [undoing, setUndoing] = useState<string | null>(null);
+  const links = archive.relations.filter((item) => item.personId === person.id);
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <section className="admin-section" aria-labelledby="admin-links-heading">
+      <h3 id="admin-links-heading">
+        <MapPin size={18} aria-hidden="true" /> Places connected to this person
+      </h3>
+      {!links.length && <p className="admin-history-note">No places are connected yet.</p>}
+      <ul className="admin-links">
+        {links.map((link) => {
+          const place = archive.places.find((item) => item.id === link.placeId);
+          return (
+            <li key={link.id}>
+              <div className="admin-link-summary">
+                <div>
+                  <strong>{place?.name ?? 'Unknown place'}</strong>
+                  <span>{link.label}</span>
+                </div>
+                <div className="admin-link-actions">
+                  <button
+                    className="community-text-button"
+                    onClick={() => setOpen(open === link.id ? null : link.id)}
+                    aria-expanded={open === link.id}
+                  >
+                    {open === link.id ? 'Close' : 'Edit'}
+                  </button>
+                  {place && (
+                    <button className="community-text-button" onClick={() => onOpenPlace(place.id)}>
+                      Open place
+                    </button>
+                  )}
+                </div>
+              </div>
+              {open === link.id && (
+                <LinkEditor
+                  link={link}
+                  onSaved={(edits, message) => {
+                    setOpen(null);
+                    onSaved(edits, message);
+                  }}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {open === 'new' ? (
+        <NewLink
+          person={person}
+          archive={archive}
+          onCancel={() => setOpen(null)}
+          onSaved={(edits) => {
+            setOpen(null);
+            onSaved(edits, 'Connected. The place now appears on this person’s page and map.');
+          }}
+        />
+      ) : (
+        <button className="community-secondary" onClick={() => setOpen('new')}>
+          <Plus size={16} aria-hidden="true" /> Connect to a place on the map
+        </button>
+      )}
+    </section>
+  );
+}
+
+function LinkEditor({
+  link,
+  onSaved,
+}: {
+  link: PersonPlace;
+  onSaved: (edits: StaffEdit[], message: string) => void;
+}) {
+  const [label, setLabel] = useState(link.label);
+  const [description, setDescription] = useState(link.description);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [undoError, setUndoError] = useState('');
+  const [error, setError] = useState('');
+  const changed = label.trim() !== link.label || description.trim() !== link.description;
 
-  async function undo(edit: StaffEdit) {
+  async function send(path: string, body: Record<string, unknown>, message: string) {
     if (reason.trim().length < 3) {
-      setUndoError('Say briefly why you are undoing this change.');
+      setError('Say briefly why you are making this change.');
       return;
     }
     setBusy(true);
-    setUndoError('');
+    setError('');
     try {
-      const result = await communityRequest<{ edit: StaffEdit }>(
-        `/admin/edits/${encodeURIComponent(edit.id)}/undo`,
-        { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) },
-      );
-      setUndoing(null);
-      setReason('');
-      onUndone(result.edit.next as unknown as Person);
+      const result = await communityRequest<{ edits: StaffEdit[] }>(path, {
+        method: 'POST',
+        body: JSON.stringify({ ...body, reason: reason.trim() }),
+      });
+      onSaved(result.edits, message);
     } catch (failure) {
-      setUndoError(failure instanceof Error ? failure.message : 'The change could not be undone.');
+      setError(errorText(failure, 'The change could not be saved.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const base = `/admin/links/${encodeURIComponent(link.id)}`;
+  return (
+    <div className="admin-link-editor">
+      {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
+      <label className="community-field">
+        <span>Relationship</span>
+        <input value={label} maxLength={160} onChange={(event) => setLabel(event.target.value)} />
+      </label>
+      <label className="community-field">
+        <span>Description</span>
+        <textarea
+          rows={3}
+          maxLength={4000}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+      </label>
+      <label className="community-field">
+        <span>Reason *</span>
+        <input
+          value={reason}
+          maxLength={1000}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      <div className="admin-form-actions">
+        <button
+          className="community-primary"
+          disabled={busy || !changed}
+          onClick={() =>
+            void send(
+              base,
+              { patch: { label: label.trim(), description: description.trim() } },
+              'Saved the connection.',
+            )
+          }
+        >
+          {busy && <LoaderCircle size={16} className="community-spinner" />} Save connection
+        </button>
+        <button
+          className="community-text-button admin-danger"
+          disabled={busy}
+          onClick={() => {
+            if (
+              window.confirm(
+                'Remove this connection? The place stays on the map for anyone else connected to it. You can undo this from the change history.',
+              )
+            )
+              void send(`${base}/remove`, {}, 'Removed the connection.');
+          }}
+        >
+          Remove connection
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NewLink({
+  person,
+  archive,
+  onCancel,
+  onSaved,
+}: {
+  person: Person;
+  archive: ArchiveData;
+  onCancel: () => void;
+  onSaved: (edits: StaffEdit[]) => void;
+}) {
+  const linked = new Set(
+    archive.relations.filter((item) => item.personId === person.id).map((item) => item.placeId),
+  );
+  const places = archive.places
+    .filter((place) => !linked.has(place.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const sources = personSources(person, archive);
+  const [placeId, setPlaceId] = useState('');
+  const [label, setLabel] = useState('');
+  const [description, setDescription] = useState('');
+  const [sourceId, setSourceId] = useState(sources[0]?.id ?? '');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!placeId || !label.trim() || !sourceId) {
+      setError('Choose a place, describe the relationship and choose a source.');
+      return;
+    }
+    if (reason.trim().length < 3) {
+      setError('Say briefly why you are making this change.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await communityRequest<{ edits: StaffEdit[] }>('/admin/links', {
+        method: 'POST',
+        body: JSON.stringify({
+          personId: person.id,
+          placeId,
+          label: label.trim(),
+          description: description.trim(),
+          sourceId,
+          reason: reason.trim(),
+        }),
+      });
+      onSaved(result.edits);
+    } catch (failure) {
+      setError(errorText(failure, 'The connection could not be saved.'));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="admin-history" aria-labelledby="admin-history-heading">
-      <h3 id="admin-history-heading">
-        <History size={18} aria-hidden="true" /> Change history
-      </h3>
-      <p className="admin-history-note">
-        Direct corrections made here. Changes that arrived with a published contribution are on the
-        Contributions tab, and withdrawing one there keeps any later correction.
-      </p>
+    <form className="admin-link-editor" onSubmit={save}>
       {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
-      {history === null && !error && <p className="admin-history-note">Loading…</p>}
-      {history?.length === 0 && <p className="admin-history-note">No direct corrections yet.</p>}
-      <ol>
-        {history?.map((edit) => (
-          <li key={edit.id} className={edit.undoneAt ? 'is-undone' : undefined}>
-            <div className="admin-history-meta">
-              <time dateTime={edit.createdAt}>
-                {new Date(edit.createdAt).toLocaleString('en-US', {
-                  dateStyle: 'medium',
-                  timeStyle: 'short',
-                })}
-              </time>
-              <span>{edit.actorEmail ?? 'Staff'}</span>
-              {edit.undoOf && <span className="admin-history-tag">Undo</span>}
-              {edit.undoneAt && <span className="admin-history-tag">Undone</span>}
-            </div>
-            <p className="admin-history-reason">{edit.reason}</p>
-            <dl>
-              {edit.changedFields.map((field) => (
-                <div key={field}>
-                  <dt>{fieldLabels[field] ?? field}</dt>
-                  <dd>
-                    <span>{shown(edit.previous?.[field])}</span>
-                    <span aria-hidden="true"> → </span>
-                    <span className="sr-only"> changed to </span>
-                    <span>{shown(edit.next?.[field])}</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {!edit.undoneAt && !edit.undoOf && (
-              <div className="admin-undo">
-                {undoing === edit.id ? (
-                  <>
-                    <label className="community-field">
-                      <span>Why undo this change?</span>
-                      <input
-                        value={reason}
-                        maxLength={1000}
-                        autoFocus
-                        onChange={(event) => setReason(event.target.value)}
-                      />
-                    </label>
-                    {undoError && <CommunityNotice kind="error">{undoError}</CommunityNotice>}
-                    <div className="admin-form-actions">
-                      <button
-                        className="community-secondary"
-                        disabled={busy}
-                        onClick={() => void undo(edit)}
-                      >
-                        {busy ? (
-                          <LoaderCircle size={16} className="community-spinner" />
-                        ) : (
-                          <Undo2 size={16} aria-hidden="true" />
-                        )}
-                        Undo this change
-                      </button>
-                      <button
-                        className="community-text-button"
-                        onClick={() => {
-                          setUndoing(null);
-                          setUndoError('');
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <button
-                    className="community-text-button"
-                    onClick={() => {
-                      setUndoing(edit.id);
-                      setReason('');
-                      setUndoError('');
-                    }}
-                  >
-                    <Undo2 size={16} aria-hidden="true" /> Undo
-                  </button>
-                )}
-              </div>
-            )}
-          </li>
-        ))}
-      </ol>
-    </section>
+      <label className="community-field">
+        <span>Place *</span>
+        <select value={placeId} onChange={(event) => setPlaceId(event.target.value)}>
+          <option value="">Choose a place already on the map</option>
+          {places.map((place) => (
+            <option key={place.id} value={place.id}>
+              {place.name}
+            </option>
+          ))}
+        </select>
+        <small>New places still arrive through contributions.</small>
+      </label>
+      <label className="community-field">
+        <span>Relationship *</span>
+        <input
+          value={label}
+          maxLength={160}
+          placeholder="For example: Buried here, Pastor 1931–1975"
+          onChange={(event) => setLabel(event.target.value)}
+        />
+      </label>
+      <label className="community-field">
+        <span>Description</span>
+        <textarea
+          rows={3}
+          maxLength={4000}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+      </label>
+      <label className="community-field">
+        <span>Source *</span>
+        <select value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
+          {!sources.length && <option value="">This person’s record cites no sources yet</option>}
+          {sources.map((source) => (
+            <option key={source.id} value={source.id}>
+              {source.title}
+            </option>
+          ))}
+        </select>
+        <small>Every connection on the public page cites a source this record already uses.</small>
+      </label>
+      <label className="community-field">
+        <span>Reason *</span>
+        <input
+          value={reason}
+          maxLength={1000}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      <div className="admin-form-actions">
+        <button className="community-primary" disabled={busy}>
+          {busy && <LoaderCircle size={16} className="community-spinner" />} Connect
+        </button>
+        <button type="button" className="community-text-button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }

@@ -181,7 +181,16 @@ export type StaffPersonEdit = z.infer<typeof staffPersonEditSchema>;
 /** One direct staff change to a public record, as listed in the archive admin's history. */
 export type StaffEdit = {
   id: string;
-  targetTable: 'persons' | 'places' | 'person_places' | 'materials';
+  /** Rows changed by one staff action share a batch and are undone together. */
+  batchId: string;
+  targetTable:
+    | 'persons'
+    | 'places'
+    | 'person_places'
+    | 'materials'
+    | 'sources'
+    | 'issues'
+    | 'contributions';
   targetId: string;
   reason: string;
   actorEmail: string | null;
@@ -195,6 +204,49 @@ export type StaffEdit = {
   /** Set on an entry that has been undone. */
   undoneAt: string | null;
 };
+// The metropolitan-Atlanta bounds are checked where the place is saved, with a plain message.
+const staffCoordinatesSchema = z
+  .tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])
+  .nullable();
+/** Corrections to a map place's own fields. Omitted fields keep their current values. */
+export const staffPlaceEditSchema = z.object({
+  patch: z.object({
+    name: z.string().trim().min(1, 'Name the place.').max(160).optional(),
+    scope: z.enum(['cemetery', 'atlanta']).optional(),
+    address: z.string().trim().max(300).nullable().optional(),
+    coordinates: staffCoordinatesSchema.optional(),
+    precision: z.enum(['reference', 'address', 'verified', 'unmapped']).optional(),
+    locationNote: z
+      .string()
+      .trim()
+      .min(1, 'Describe the location evidence and its limits.')
+      .max(2000)
+      .optional(),
+    summary: z.string().trim().max(4000).optional(),
+  }),
+  reason: staffReasonSchema,
+});
+export type StaffPlaceEdit = z.infer<typeof staffPlaceEditSchema>;
+/** Corrections to how one person is connected to one place. */
+export const staffLinkEditSchema = z.object({
+  patch: z.object({
+    label: z.string().trim().min(1, 'Describe the relationship.').max(160).optional(),
+    description: z.string().trim().max(4000).optional(),
+  }),
+  reason: staffReasonSchema,
+});
+export type StaffLinkEdit = z.infer<typeof staffLinkEditSchema>;
+/** Connects a person to a place already on the map, citing one of the archive's sources. */
+export const staffLinkCreateSchema = z.object({
+  personId: z.string().min(1).max(120),
+  placeId: z.string().min(1).max(120),
+  label: z.string().trim().min(1, 'Describe the relationship.').max(160),
+  description: z.string().trim().max(4000).default(''),
+  sourceId: z.string().min(1, 'Choose the source that supports this connection.').max(200),
+  reason: staffReasonSchema,
+});
+export type StaffLinkCreate = z.infer<typeof staffLinkCreateSchema>;
+export const staffRemoveSchema = z.object({ reason: staffReasonSchema });
 export const reviewInputSchema = z
   .object({
     action: z.enum(['publish', 'needs-information', 'reject', 'withdraw']),

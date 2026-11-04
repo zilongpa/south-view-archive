@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { dataMode } from '@southview/db/connection';
 import * as repository from '@southview/db/community';
-import { editPerson, listStaffEdits, undoStaffEdit } from '@southview/db/staff-edits';
+import * as staffEdits from '@southview/db/staff-edits';
 import { getSession, getSignInMethods, isReviewer } from '@southview/services/auth';
 import { savePhoto, InvalidPhotoError } from '@southview/services/photos';
 import { getStorage, MAX_PHOTO_BYTES } from '@southview/services/storage';
@@ -12,7 +12,11 @@ import {
   submissionInputSchema,
   photoMetadataSchema,
   reviewInputSchema,
+  staffLinkCreateSchema,
+  staffLinkEditSchema,
   staffPersonEditSchema,
+  staffPlaceEditSchema,
+  staffRemoveSchema,
   type Actor,
   type SubmissionRecord,
 } from '@southview/validators';
@@ -219,17 +223,42 @@ async function handle(request: Request, context: Context): Promise<Response> {
     // Archive admin: direct staff corrections, each recorded with a reason and undoable.
     if (path[0] === 'admin') {
       if (!actor.reviewer) throw new HttpError(403, 'Staff access is required.');
-      if (path.length === 3 && path[1] === 'persons' && method === 'GET')
-        return json({
-          edits: await listStaffEdits({ table: 'persons', id: path[2]! }, actor),
-        });
-      if (path.length === 3 && path[1] === 'persons' && method === 'POST')
+      const [, area, id, action] = path;
+      if (area === 'persons' && id && !action && method === 'GET')
+        return json({ edits: await staffEdits.listStaffEdits({ personId: id }, actor) });
+      if (area === 'persons' && id && !action && method === 'POST')
         return json(
-          await editPerson(path[2]!, staffPersonEditSchema.parse(await bodyJSON(request)), actor),
+          await staffEdits.editPerson(
+            id,
+            staffPersonEditSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
         );
-      if (path.length === 4 && path[1] === 'edits' && path[3] === 'undo' && method === 'POST') {
-        const { reason } = z.object({ reason: z.string() }).parse(await bodyJSON(request));
-        return json(await undoStaffEdit(path[2]!, reason, actor));
+      if (area === 'places' && id && !action && method === 'GET')
+        return json({ edits: await staffEdits.listStaffEdits({ placeId: id }, actor) });
+      if (area === 'places' && id && !action && method === 'POST')
+        return json(
+          await staffEdits.editPlace(
+            id,
+            staffPlaceEditSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
+        );
+      if (area === 'links' && !id && method === 'POST')
+        return json(
+          await staffEdits.createLink(staffLinkCreateSchema.parse(await bodyJSON(request)), actor),
+        );
+      if (area === 'links' && id && !action && method === 'POST')
+        return json(
+          await staffEdits.editLink(id, staffLinkEditSchema.parse(await bodyJSON(request)), actor),
+        );
+      if (area === 'links' && id && action === 'remove' && method === 'POST') {
+        const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
+        return json(await staffEdits.removeLink(id, reason, actor));
+      }
+      if (area === 'edits' && id && action === 'undo' && method === 'POST') {
+        const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
+        return json(await staffEdits.undoStaffEdit(id, reason, actor));
       }
       throw new HttpError(404, 'Not found.');
     }

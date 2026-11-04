@@ -9,6 +9,7 @@ import {
   Inbox,
   LoaderCircle,
   RefreshCw,
+  MapPin,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -35,6 +36,8 @@ import {
 } from '@/lib/review-state';
 import { CommunityNotice } from './community-shell';
 import { PeopleAdmin } from './people-admin';
+import { PlacesAdmin } from './places-admin';
+import { useAdminArchive } from './admin-data';
 import { StoryContextFields } from './story-context-fields';
 import { RecordPicker } from './record-picker';
 import { PrivateSubmissionPhoto } from './submission-manager';
@@ -200,14 +203,21 @@ function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['ap
   return '';
 }
 
+type AdminTab = 'contributions' | 'people' | 'places';
+const adminTab = (value: string | null): AdminTab =>
+  value === 'people' || value === 'places' ? value : 'contributions';
+
 export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   const params = useSearchParams();
   const [state, setState] = useState(() => parseReviewState(params));
   // The admin has two areas: the contribution queue and direct record corrections.
-  const [tab, setTab] = useState<'contributions' | 'people'>(() =>
-    params.get('tab') === 'people' ? 'people' : 'contributions',
-  );
+  const [tab, setTab] = useState<AdminTab>(() => adminTab(params.get('tab')));
   const [adminPerson, setAdminPerson] = useState<string | null>(() => params.get('person'));
+  const [adminPlace, setAdminPlace] = useState<string | null>(() => params.get('place'));
+  // Server data with every change saved during this visit applied, shared by the record tabs.
+  const admin = useAdminArchive(archive);
+  // Bumped when another tab opens a record, so the record tab starts on it.
+  const [nav, setNav] = useState(0);
   const [session, setSession] = useState<CommunitySession | null>(null);
   const [items, setItems] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -328,8 +338,9 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
         dirty.current = false;
         const search = new URLSearchParams(window.location.search);
         const next = parseReviewState(search);
-        setTab(search.get('tab') === 'people' ? 'people' : 'contributions');
+        setTab(adminTab(search.get('tab')));
         setAdminPerson(search.get('person'));
+        setAdminPlace(search.get('place'));
         setState(next);
         setMobileDetail(!!next.submission);
         currentUrl.current = window.location.href;
@@ -362,22 +373,30 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   }
   const visible = filterReviewQueue(items, state, archive);
   const selected = selectedReview(items, visible, state.submission);
-  function peopleUrl(personId: string | null) {
-    const search = new URLSearchParams({ tab: 'people' });
-    if (personId) search.set('person', personId);
+  function recordUrl(next: 'people' | 'places', id: string | null) {
+    const search = new URLSearchParams({ tab: next });
+    if (id) search.set(next === 'people' ? 'person' : 'place', id);
     return `/admin/contributions?${search}`;
   }
-  function switchTab(next: 'contributions' | 'people') {
-    if (next === tab || !confirmLeave()) return;
-    dirty.current = false;
+  function go(next: AdminTab, recordId?: string) {
+    if (next === 'people' && recordId !== undefined) setAdminPerson(recordId);
+    if (next === 'places' && recordId !== undefined) setAdminPlace(recordId);
     setTab(next);
+    setNav((value) => value + 1);
     setNotice('');
     window.history.replaceState(
       null,
       '',
-      next === 'people' ? peopleUrl(adminPerson) : reviewUrl(state),
+      next === 'contributions'
+        ? reviewUrl(state)
+        : recordUrl(next, recordId ?? (next === 'people' ? adminPerson : adminPlace)),
     );
     currentUrl.current = window.location.href;
+  }
+  function switchTab(next: AdminTab) {
+    if (next === tab || !confirmLeave()) return;
+    dirty.current = false;
+    go(next);
   }
   useEffect(() => {
     if (tab === 'contributions' && selected && !state.submission) {
@@ -450,17 +469,38 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
         <button role="tab" aria-selected={tab === 'people'} onClick={() => switchTab('people')}>
           <Users size={17} aria-hidden="true" /> People
         </button>
+        <button role="tab" aria-selected={tab === 'places'} onClick={() => switchTab('places')}>
+          <MapPin size={17} aria-hidden="true" /> Places
+        </button>
       </div>
       {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
       {tab === 'people' ? (
         <PeopleAdmin
-          archive={archive}
+          key={`people-${nav}`}
+          archive={admin.archive}
           initialPersonId={adminPerson}
           onDirtyChange={onDirtyChange}
           confirmLeave={confirmLeave}
+          onSaved={admin.apply}
+          onOpenPlace={(placeId) => go('places', placeId)}
           onPersonChange={(personId) => {
             setAdminPerson(personId);
-            window.history.replaceState(null, '', peopleUrl(personId));
+            window.history.replaceState(null, '', recordUrl('people', personId));
+            currentUrl.current = window.location.href;
+          }}
+        />
+      ) : tab === 'places' ? (
+        <PlacesAdmin
+          key={`places-${nav}`}
+          archive={admin.archive}
+          initialPlaceId={adminPlace}
+          onDirtyChange={onDirtyChange}
+          confirmLeave={confirmLeave}
+          onSaved={admin.apply}
+          onOpenPerson={(personId) => go('people', personId)}
+          onPlaceChange={(placeId) => {
+            setAdminPlace(placeId);
+            window.history.replaceState(null, '', recordUrl('places', placeId));
             currentUrl.current = window.location.href;
           }}
         />
