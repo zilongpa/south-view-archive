@@ -1,6 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
+  applyLifeDates,
   submissionInputSchema,
   reviewInputSchema,
   photoMetadataSchema,
@@ -589,13 +590,15 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
   const patch = review.personPatch;
   const patched = Object.values(patch ?? {}).some((value) => value !== undefined);
   // Reviewer edits to the record itself; a changed summary cites this contribution.
-  const applyPersonPatch = (base: Person): Person =>
-    personSchema.parse({
-      ...base,
+  const applyPersonPatch = (base: Person): Person => {
+    // Years and full dates move together; a changed year drops a full date it no longer matches.
+    const life: Record<string, unknown> = { ...base };
+    const conflict = applyLifeDates(life, patch ?? {});
+    if (conflict) throw new DomainError('BAD_REQUEST', conflict);
+    return personSchema.parse({
+      ...life,
       ...(patch?.name !== undefined ? { name: patch.name } : {}),
       ...(patch?.aliases !== undefined ? { aliases: patch.aliases } : {}),
-      ...(patch?.birthYear !== undefined ? { birthYear: patch.birthYear ?? undefined } : {}),
-      ...(patch?.deathYear !== undefined ? { deathYear: patch.deathYear ?? undefined } : {}),
       ...(patch?.themes !== undefined ? { themes: patch.themes } : {}),
       ...(patch?.summary !== undefined && patch.summary !== base.summary
         ? {
@@ -609,6 +612,7 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
       ...(portrait ? { portrait } : {}),
       creditIds: patched || portrait ? [...new Set([...base.creditIds, creditId])] : base.creditIds,
     });
+  };
   if (!personId) {
     const name = review.newPersonName?.trim();
     if (!name)

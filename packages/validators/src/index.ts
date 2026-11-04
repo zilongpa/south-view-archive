@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { creditSchema, contributionEntrySchema, eventDateSchema } from './community';
+import {
+  creditSchema,
+  contributionEntrySchema,
+  eventDateSchema,
+  lifeDateSchema,
+  lifeDateYear,
+} from './community';
 import { matchedPersonIds } from './discovery';
 export * from './community';
 export * from './discovery';
@@ -40,6 +46,9 @@ export const personSchema = z.object({
   aliases: z.array(z.string()),
   birthYear: z.number().optional(),
   deathYear: z.number().optional(),
+  /** A month or day refining birthYear (YYYY-MM or YYYY-MM-DD); its year equals birthYear. */
+  birthDate: lifeDateSchema.optional(),
+  deathDate: lifeDateSchema.optional(),
   themes: z.array(z.string()),
   summary: z.string(),
   summaryCitations: z.array(citationSchema).min(1),
@@ -253,6 +262,10 @@ export function validateArchive(input: unknown): ArchiveData {
     p.biography.forEach((b) => checkCitations(b.citations));
     if (p.portrait && !sourceIds.has(p.portrait.sourceId))
       throw new Error(`Missing portrait source: ${p.id}`);
+    if (p.birthDate && lifeDateYear(p.birthDate) !== p.birthYear)
+      throw new Error(`Birth date does not match the birth year: ${p.id}`);
+    if (p.deathDate && lifeDateYear(p.deathDate) !== p.deathYear)
+      throw new Error(`Death date does not match the death year: ${p.id}`);
   });
   data.places.forEach((p) => {
     checkCitations(p.coordinateCitations);

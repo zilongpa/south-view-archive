@@ -112,6 +112,8 @@ const personFieldLabels: Record<keyof PersonPatch, string> = {
   aliases: 'other names',
   birthYear: 'birth year',
   deathYear: 'death year',
+  birthDate: 'full birth date',
+  deathDate: 'full death date',
   themes: 'themes',
   summary: 'summary',
 };

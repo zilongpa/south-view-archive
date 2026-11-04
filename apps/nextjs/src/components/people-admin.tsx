@@ -2,12 +2,14 @@
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowUpRight, LoaderCircle, MapPin, Plus, Search, Users } from 'lucide-react';
-import type {
-  ArchiveData,
-  Person,
-  PersonPlace,
-  StaffEdit,
-  StaffPersonEdit,
+import {
+  formatLifeDate,
+  monthName,
+  type ArchiveData,
+  type Person,
+  type PersonPlace,
+  type StaffEdit,
+  type StaffPersonEdit,
 } from '@southview/validators';
 import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
@@ -19,7 +21,11 @@ type Fields = {
   name: string;
   aliases: string;
   birthYear: string;
+  birthMonth: string;
+  birthDay: string;
   deathYear: string;
+  deathMonth: string;
+  deathDay: string;
   themes: string;
   summary: string;
 };
@@ -33,7 +39,11 @@ function fieldsFor(person: Person): Fields {
     name: person.name,
     aliases: person.aliases.join(', '),
     birthYear: person.birthYear ? String(person.birthYear) : '',
+    birthMonth: person.birthDate ? String(Number(person.birthDate.slice(5, 7))) : '',
+    birthDay: person.birthDate?.length === 10 ? String(Number(person.birthDate.slice(8))) : '',
     deathYear: person.deathYear ? String(person.deathYear) : '',
+    deathMonth: person.deathDate ? String(Number(person.deathDate.slice(5, 7))) : '',
+    deathDay: person.deathDate?.length === 10 ? String(Number(person.deathDate.slice(8))) : '',
     themes: person.themes.join(', '),
     summary: person.summary,
   };
@@ -45,15 +55,29 @@ function patchFor(fields: Fields, saved: Fields): StaffPersonEdit['patch'] {
   if (list(fields.aliases).join(', ') !== saved.aliases) patch.aliases = list(fields.aliases);
   if (list(fields.themes).join(', ') !== saved.themes) patch.themes = list(fields.themes);
   if (fields.summary.trim() !== saved.summary) patch.summary = fields.summary.trim();
-  for (const key of ['birthYear', 'deathYear'] as const)
-    if (fields[key].trim() !== saved[key])
-      patch[key] = fields[key].trim() ? Number(fields[key].trim()) : null;
+  for (const life of ['birth', 'death'] as const) {
+    const yearKey = `${life}Year` as const;
+    if (fields[yearKey].trim() !== saved[yearKey])
+      patch[yearKey] = fields[yearKey].trim() ? Number(fields[yearKey].trim()) : null;
+    const date = lifeDate(fields, life);
+    if (date !== lifeDate(saved, life)) patch[`${life}Date`] = date;
+  }
   return patch;
+}
+const pad = (value: string, length: number) => value.trim().padStart(length, '0');
+/** The full date the year, month and day fields give, or null for the year alone. */
+function lifeDate(fields: Fields, life: 'birth' | 'death') {
+  const year = fields[`${life}Year`].trim();
+  const month = fields[`${life}Month`];
+  const day = fields[`${life}Day`].trim();
+  if (!year || !month) return null;
+  return `${pad(year, 4)}-${pad(month, 2)}${day ? `-${pad(day, 2)}` : ''}`;
 }
 const years = (person: Person) =>
   person.birthYear || person.deathYear
     ? `${person.birthYear ?? '?'} – ${person.deathYear ?? '?'}`
     : 'Years unknown';
+const months = Array.from({ length: 12 }, (_, index) => index + 1);
 const errorText = (failure: unknown, fallback: string) =>
   failure instanceof Error ? failure.message : fallback;
 
@@ -237,6 +261,17 @@ function PersonEditor({
         setError('Enter birth and death years as years, or leave them blank.');
         return;
       }
+    for (const life of ['birth', 'death'] as const) {
+      const day = fields[`${life}Day`].trim();
+      if (fields[`${life}Month`] && !fields[`${life}Year`].trim()) {
+        setError(`Enter the ${life} year before its month.`);
+        return;
+      }
+      if (day && (!fields[`${life}Month`] || !/^\d{1,2}$/.test(day))) {
+        setError(`Choose the ${life} month, and enter the day as a number.`);
+        return;
+      }
+    }
     if (!fields.name.trim()) {
       setError('Enter the person’s public name.');
       return;
@@ -296,28 +331,9 @@ function PersonEditor({
                 onChange={(event) => edit('aliases', event.target.value)}
               />
             </label>
-            <div className="community-two-columns">
-              <label className="community-field">
-                <span>Birth year</span>
-                <input
-                  inputMode="numeric"
-                  maxLength={4}
-                  placeholder="Unknown"
-                  value={fields.birthYear}
-                  onChange={(event) => edit('birthYear', event.target.value)}
-                />
-              </label>
-              <label className="community-field">
-                <span>Death year</span>
-                <input
-                  inputMode="numeric"
-                  maxLength={4}
-                  placeholder="Unknown"
-                  value={fields.deathYear}
-                  onChange={(event) => edit('deathYear', event.target.value)}
-                />
-              </label>
-            </div>
+            {(['birth', 'death'] as const).map((life) => (
+              <LifeDateFields key={life} life={life} fields={fields} edit={edit} />
+            ))}
             <label className="community-field">
               <span>Themes</span>
               <input
@@ -697,5 +713,70 @@ function NewLink({
         </button>
       </div>
     </form>
+  );
+}
+
+/** Year, then an optional month and day, for a birth or a death. */
+function LifeDateFields({
+  life,
+  fields,
+  edit,
+}: {
+  life: 'birth' | 'death';
+  fields: Fields;
+  edit: (key: keyof Fields, value: string) => void;
+}) {
+  const label = life === 'birth' ? 'Born' : 'Died';
+  const month = fields[`${life}Month`];
+  const year = Number(fields[`${life}Year`]) || undefined;
+  const date = lifeDate(fields, life);
+  return (
+    <fieldset className="admin-fieldset">
+      <legend>{label}</legend>
+      <div className="admin-date-row">
+        <label className="community-field">
+          <span>Year</span>
+          <input
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="Unknown"
+            value={fields[`${life}Year`]}
+            onChange={(event) => edit(`${life}Year`, event.target.value)}
+          />
+        </label>
+        <label className="community-field">
+          <span>Month</span>
+          <select
+            value={month}
+            onChange={(event) => {
+              edit(`${life}Month`, event.target.value);
+              if (!event.target.value) edit(`${life}Day`, '');
+            }}
+          >
+            <option value="">Not known</option>
+            {months.map((value) => (
+              <option key={value} value={String(value)}>
+                {monthName(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="community-field">
+          <span>Day</span>
+          <input
+            inputMode="numeric"
+            maxLength={2}
+            placeholder="—"
+            disabled={!month}
+            value={fields[`${life}Day`]}
+            onChange={(event) => edit(`${life}Day`, event.target.value)}
+          />
+        </label>
+      </div>
+      <small>
+        Shown on the person page as {formatLifeDate(year, date ?? undefined) ?? 'unknown'}. Lists
+        and the map show the year only.
+      </small>
+    </fieldset>
   );
 }

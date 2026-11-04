@@ -1003,3 +1003,12 @@ form.admin-link-editor {
 .admin-link-summary > div:first-child span {
   overflow-wrap: anywhere;
 }
+.admin-date-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 0.8fr);
+  gap: 10px;
+}
+.admin-fieldset > small {
+  color: var(--muted);
+  font-size: 12.5px;
+}

@@ -2,6 +2,49 @@ import { z } from 'zod';
 
 export const contributionKindSchema = z.enum(['memory', 'addition', 'correction', 'new-person']);
 const eventYearSchema = z.number().int().min(1).max(9999);
+
+const daysIn = (year: number, month: number) =>
+  month === 2
+    ? (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+      ? 29
+      : 28
+    : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]!;
+/**
+ * A birth or death date more precise than its year: a month (1897-12) or a day (1897-12-19).
+ * Its year always equals the person's birth or death year, which lists and the map show.
+ */
+export const lifeDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}(-\d{2})?$/, 'Enter the date as a year, month and day.')
+  .refine((value) => {
+    const [year, month, day] = value.split('-').map(Number) as [number, number, number?];
+    if (year < 1 || month < 1 || month > 12) return false;
+    return day === undefined || (day >= 1 && day <= daysIn(year, month));
+  }, 'That day does not exist in that month.');
+export const lifeDateYear = (date: string) => Number(date.slice(0, 4));
+const monthNames = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+export const monthName = (month: number) => monthNames[month - 1] ?? '';
+/** "December 19, 1897", "December 1897" or "1897"; undefined when nothing is known. */
+export function formatLifeDate(year: number | undefined, date?: string): string | undefined {
+  if (date) {
+    const [y, month, day] = date.split('-').map(Number) as [number, number, number?];
+    return day ? `${monthName(month)} ${day}, ${y}` : `${monthName(month)} ${y}`;
+  }
+  return year ? String(year) : undefined;
+}
 /** Event time is independent of publication time; unknown dates remain explicitly unknown. */
 export const eventDateSchema = z
   .discriminatedUnion('kind', [
@@ -156,6 +199,9 @@ export const personPatchSchema = z.object({
     .optional(),
   birthYear: eventYearSchema.nullable().optional(),
   deathYear: eventYearSchema.nullable().optional(),
+  /** A month or day refining the birth year; null clears it back to the year alone. */
+  birthDate: lifeDateSchema.nullable().optional(),
+  deathDate: lifeDateSchema.nullable().optional(),
   themes: z
     .array(z.string().trim().min(1, 'Remove the empty theme entry.').max(80))
     .max(20)
@@ -167,6 +213,53 @@ export const personPatchSchema = z.object({
     .max(4000)
     .optional(),
 });
+type LifePatch = Pick<
+  z.infer<typeof personPatchSchema>,
+  'birthYear' | 'deathYear' | 'birthDate' | 'deathDate'
+>;
+/**
+ * Applies year and full-date changes to a person record in place, keeping each full date's year
+ * equal to its year: a date without a year supplies the year, a changed year drops a date it no
+ * longer matches, and a cleared year clears its date. Returns a message when the dates conflict.
+ */
+export function applyLifeDates(record: Record<string, unknown>, patch: LifePatch): string | null {
+  for (const [yearKey, dateKey, label] of [
+    ['birthYear', 'birthDate', 'birth'],
+    ['deathYear', 'deathDate', 'death'],
+  ] as const) {
+    const year = patch[yearKey];
+    const date = patch[dateKey];
+    if (year === null) delete record[yearKey];
+    else if (year !== undefined) record[yearKey] = year;
+    if (date === null) delete record[dateKey];
+    else if (date !== undefined) record[dateKey] = date;
+    const current = record[dateKey];
+    if (typeof current !== 'string') continue;
+    if (record[yearKey] === undefined) {
+      if (year === null) delete record[dateKey];
+      else record[yearKey] = lifeDateYear(current);
+    } else if (record[yearKey] !== lifeDateYear(current)) {
+      if (date === undefined) delete record[dateKey];
+      else return `The full ${label} date must be in the ${label} year.`;
+    }
+  }
+  const birth = record.birthYear;
+  const death = record.deathYear;
+  if (typeof birth === 'number' && typeof death === 'number') {
+    if (birth > death) return 'The birth year must not be after the death year.';
+    const born = record.birthDate;
+    const died = record.deathDate;
+    if (
+      birth === death &&
+      typeof born === 'string' &&
+      typeof died === 'string' &&
+      born.slice(0, Math.min(born.length, died.length)) >
+        died.slice(0, Math.min(born.length, died.length))
+    )
+      return 'The birth date must not be after the death date.';
+  }
+  return null;
+}
 /** Why a staff member is changing a record directly; shown in the change history. */
 export const staffReasonSchema = z
   .string()

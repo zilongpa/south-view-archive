@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, BookOpen, ExternalLink, Headphones, MapPin } from 'lucide-react';
 import {
   formatEventDate,
+  formatLifeDate,
   portraitRights,
   publicRelatedPersonIds,
   type ArchiveData,
@@ -19,6 +20,15 @@ import { copy } from '@/lib/copy';
 import { PersonEditProvider } from './person-edit/context';
 import { AddSlot } from './person-edit/slot';
 import { EditEntryButton, EditToolbar } from './person-edit/toolbar';
+
+/** "1897–1984", or "December 19, 1897 – November 11, 1984" when full dates are known. */
+function lifeSpan(person: Person) {
+  const born = formatLifeDate(person.birthYear, person.birthDate);
+  const died = formatLifeDate(person.deathYear, person.deathDate);
+  if (!born) return `Died ${died}`;
+  if (!died) return person.birthDate ? `Born ${born}` : born;
+  return person.birthDate || person.deathDate ? `${born} – ${died}` : `${born}–${died}`;
+}
 
 const precisionLabels: Record<Place['precision'], string> = {
   reference: 'Reference position · unverified',
@@ -150,9 +160,7 @@ export function PersonArchive({
                 <h1 className="archive-title">{displayPersonName(person.name)}</h1>
                 {(person.birthYear || person.deathYear) && (
                   <p className="archive-years">
-                    {person.birthYear
-                      ? `${person.birthYear}${person.deathYear ? `–${person.deathYear}` : ''}`
-                      : `Died ${person.deathYear}`}{' '}
+                    {lifeSpan(person)}{' '}
                     <CitationMarks citations={person.summaryCitations} sources={data.sources} />
                   </p>
                 )}
