@@ -8,6 +8,7 @@ import {
   createIssue,
   createLink,
   createMaterial,
+  editBiography,
   editIssue,
   editLink,
   editMaterial,
@@ -477,6 +478,55 @@ test('staff edits and contributions undo independently', async (t) => {
       assert.equal(after.birthYear, 1940);
       assert.equal(after.deathYear, before.deathYear);
       assert.deepEqual(after.creditIds, before.creditIds);
+    });
+    await t.test('a reviewer rewrites, reorders, removes and adds story paragraphs', async () => {
+      const before = await lewis();
+      assert.ok(before.biography.length >= 2, 'fixture needs two paragraphs');
+      const sourceId = before.summaryCitations[0]!.sourceId;
+      const keep = (from: number) => ({
+        from,
+        text: before.biography[from]!.text,
+        citations: before.biography[from]!.citations,
+      });
+      const story = (paragraphs: unknown[], base = before.biography) =>
+        editBiography(
+          'john-lewis',
+          { base, paragraphs, reason: 'Story corrected' } as never,
+          reviewer,
+        );
+      await assert.rejects(story([{ text: 'Uncited.', citations: [] }]));
+      await assert.rejects(story([{ text: 'Cited.', citations: [{ sourceId: 'nope' }] }]), {
+        code: 'NOT_FOUND',
+      });
+      await assert.rejects(story([keep(0), keep(0)]), { code: 'BAD_REQUEST' });
+      await assert.rejects(story([keep(0)], []), { code: 'CONFLICT' });
+
+      // Second paragraph first and corrected, first paragraph removed, one paragraph added.
+      const rest = before.biography.slice(2).map((_, i) => keep(i + 2));
+      const result = await story([
+        { ...keep(1), text: 'A corrected second paragraph.' },
+        ...rest,
+        { text: 'A new closing paragraph.', citations: [{ sourceId, locator: 'p. 4' }] },
+      ]);
+      const after = await lewis();
+      assert.equal(after.biography.length, before.biography.length);
+      assert.equal(after.biography[0]!.text, 'A corrected second paragraph.');
+      assert.deepEqual(after.biography[0]!.creditIds, before.biography[1]!.creditIds);
+      assert.deepEqual(after.biography.at(-1)!.citations, [{ sourceId, locator: 'p. 4' }]);
+      assert.ok(after.biography.at(-1)!.id!.startsWith('staff-'));
+      assert.ok(!after.biography.some((p) => p.text === before.biography[0]!.text));
+      // Saving the same story again changes nothing.
+      assert.equal(
+        (
+          await story(
+            after.biography.map((p, from) => ({ from, text: p.text, citations: p.citations })),
+            after.biography,
+          )
+        ).edits.length,
+        0,
+      );
+      await undoStaffEdit(result.edits[0]!.id, 'Back', reviewer);
+      assert.deepEqual((await lewis()).biography, before.biography);
     });
     await t.test('full birth and death dates stay in their years', async () => {
       const before = await lewis();

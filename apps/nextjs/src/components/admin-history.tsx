@@ -22,7 +22,7 @@ export const fieldLabels: Record<string, string> = {
   themes: 'Themes',
   summary: 'Summary',
   summaryCitations: 'Summary sources',
-  biography: 'Story paragraphs',
+  biography: 'Story',
   portrait: 'Portrait',
   creditIds: 'Credits',
   scope: 'Area',
@@ -53,6 +53,34 @@ export const fieldLabels: Record<string, string> = {
   note: 'Note',
   sourceIds: 'Sources',
 };
+type Paragraph = { id?: string; text: string; citations: unknown[] };
+/** What one change did to a story, in words: "2 rewritten, 1 added, order changed". */
+function storyChange(previous: unknown, next: unknown) {
+  const before = (Array.isArray(previous) ? previous : []) as Paragraph[];
+  const after = (Array.isArray(next) ? next : []) as Paragraph[];
+  const key = (item: Paragraph) => item.id ?? `text:${item.text}`;
+  const beforeKeys = before.map(key);
+  const afterKeys = after.map(key);
+  let rewritten = 0;
+  for (const item of after) {
+    const old = item.id ? before.find((other) => other.id === item.id) : undefined;
+    if (old && JSON.stringify(old) !== JSON.stringify(item)) rewritten += 1;
+  }
+  const added = afterKeys.filter((k) => !beforeKeys.includes(k)).length;
+  const removed = beforeKeys.filter((k) => !afterKeys.includes(k)).length;
+  // An unlabelled paragraph whose text changed reads as one removed and one added.
+  const replaced = Math.min(added, removed);
+  const shared = afterKeys.filter((k) => beforeKeys.includes(k));
+  const reordered =
+    JSON.stringify(shared) !== JSON.stringify(beforeKeys.filter((k) => afterKeys.includes(k)));
+  const parts = [
+    rewritten + replaced ? `${rewritten + replaced} rewritten` : '',
+    added - replaced ? `${added - replaced} added` : '',
+    removed - replaced ? `${removed - replaced} removed` : '',
+    reordered ? 'order changed' : '',
+  ].filter(Boolean);
+  return `${parts.join(', ') || 'sources changed'} (${before.length} → ${after.length} paragraphs)`;
+}
 function shown(field: string, value: unknown) {
   if (value === undefined || value === null || value === '') return '—';
   if ((field === 'birthDate' || field === 'deathDate') && typeof value === 'string')
@@ -198,12 +226,16 @@ export function ChangeHistory({
                       {edit.changedFields.map((field) => (
                         <div key={field}>
                           <dt>{fieldLabels[field] ?? field}</dt>
-                          <dd>
-                            <span>{shown(field, edit.previous?.[field])}</span>
-                            <span aria-hidden="true"> → </span>
-                            <span className="sr-only"> changed to </span>
-                            <span>{shown(field, edit.next?.[field])}</span>
-                          </dd>
+                          {field === 'biography' ? (
+                            <dd>{storyChange(edit.previous?.[field], edit.next?.[field])}</dd>
+                          ) : (
+                            <dd>
+                              <span>{shown(field, edit.previous?.[field])}</span>
+                              <span aria-hidden="true"> → </span>
+                              <span className="sr-only"> changed to </span>
+                              <span>{shown(field, edit.next?.[field])}</span>
+                            </dd>
+                          )}
                         </div>
                       ))}
                     </dl>

@@ -12,6 +12,7 @@ import {
   submissionInputSchema,
   photoMetadataSchema,
   reviewInputSchema,
+  staffBiographySchema,
   staffIssueCreateSchema,
   staffIssueSchema,
   staffLinkCreateSchema,
@@ -235,6 +236,14 @@ async function handle(request: Request, context: Context): Promise<Response> {
           await staffEdits.editPerson(
             id,
             staffPersonEditSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
+        );
+      if (area === 'persons' && id && action === 'biography' && method === 'POST')
+        return json(
+          await staffEdits.editBiography(
+            id,
+            staffBiographySchema.parse(await bodyJSON(request)),
             actor,
           ),
         );

@@ -1012,3 +1012,61 @@ form.admin-link-editor {
   color: var(--muted);
   font-size: 12.5px;
 }
+.admin-story {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.admin-story > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.admin-story-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.admin-story-head > span {
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.admin-citations {
+  display: grid;
+  gap: 6px;
+}
+.admin-citation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 160px) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.admin-citation > span {
+  overflow-wrap: anywhere;
+}
+.admin-citation input,
+.admin-citation-add select {
+  min-height: 34px;
+  font-size: 13px;
+}
+.admin-citation-add select {
+  width: 100%;
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  .admin-citation {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .admin-citation input {
+    grid-column: 1;
+  }
+}
