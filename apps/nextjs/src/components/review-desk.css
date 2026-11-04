@@ -973,3 +973,33 @@ form.admin-link-editor {
 .admin-form .location-picker {
   margin: 0;
 }
+.admin-fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+}
+.admin-fieldset legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.admin-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.admin-checklist > .community-fields {
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 3px;
+}
+.admin-link-summary strong svg {
+  vertical-align: -2px;
+}
+.admin-link-summary > div:first-child span {
+  overflow-wrap: anywhere;
+}

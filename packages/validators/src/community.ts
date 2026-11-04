@@ -247,6 +247,70 @@ export const staffLinkCreateSchema = z.object({
 });
 export type StaffLinkCreate = z.infer<typeof staffLinkCreateSchema>;
 export const staffRemoveSchema = z.object({ reason: staffReasonSchema });
+/** Where a record or oral history is held: a link to the collection, never an uploaded file. */
+export const staffSourceLinkSchema = z.object({
+  /** Blank uses the record's own title. */
+  title: z.string().trim().max(300).default(''),
+  creator: z.string().trim().max(200).default(''),
+  publisher: z.string().trim().min(2, 'Say which library, archive or website holds it.').max(200),
+  url: z
+    .string()
+    .trim()
+    .max(2000)
+    .refine(
+      (value) => /^https?:\/\/[^\s]+\.[^\s]+/.test(value),
+      'Paste the full web address, starting with https://.',
+    ),
+  rights: z.string().trim().max(500).default(''),
+});
+export type StaffSourceLink = z.infer<typeof staffSourceLinkSchema>;
+/** A record or oral history shown on a person's page, linking out to the collection holding it. */
+export const staffMaterialSchema = z.object({
+  material: z.object({
+    title: z.string().trim().min(3, 'Give the record a title of at least 3 characters.').max(300),
+    kind: z.enum(['oral-history', 'document']),
+    description: z.string().trim().min(10, 'Describe the record in a sentence or two.').max(4000),
+    narrator: z.string().trim().max(200).default(''),
+    interviewer: z.string().trim().max(200).default(''),
+    /** When it was recorded or written, as the collection gives it. */
+    date: z.string().trim().max(200).default(''),
+    /** When the events it describes happened. */
+    eventDate: eventDateSchema.default({ kind: 'unknown' }),
+    relatedPersonIds: linkedRecordIdsSchema.default([]),
+    placeIds: linkedRecordIdsSchema.default([]),
+  }),
+  /** An archive source already in use (optionally corrected), or a new link. */
+  source: z.discriminatedUnion('mode', [
+    z.object({
+      mode: z.literal('existing'),
+      sourceId: z.string().min(1).max(200),
+      link: staffSourceLinkSchema.optional(),
+    }),
+    z.object({ mode: z.literal('new'), link: staffSourceLinkSchema }),
+  ]),
+  reason: staffReasonSchema,
+});
+export type StaffMaterial = z.infer<typeof staffMaterialSchema>;
+export const staffMaterialCreateSchema = staffMaterialSchema.extend({
+  personId: z.string().min(1).max(120),
+});
+export type StaffMaterialCreate = z.infer<typeof staffMaterialCreateSchema>;
+/** A public note on a person's record, such as sources disagreeing about a date. */
+export const staffIssueSchema = z.object({
+  /** What the note concerns: a field name such as birthYear, or "other". Not shown publicly. */
+  field: z.string().trim().min(1).max(60),
+  note: z.string().trim().min(10, 'Write the note in at least 10 characters.').max(4000),
+  sourceIds: z
+    .array(z.string().min(1).max(200))
+    .max(20)
+    .transform((ids) => [...new Set(ids)]),
+  reason: staffReasonSchema,
+});
+export type StaffIssue = z.infer<typeof staffIssueSchema>;
+export const staffIssueCreateSchema = staffIssueSchema.extend({
+  personId: z.string().min(1).max(120),
+});
+export type StaffIssueCreate = z.infer<typeof staffIssueCreateSchema>;
 export const reviewInputSchema = z
   .object({
     action: z.enum(['publish', 'needs-information', 'reject', 'withdraw']),

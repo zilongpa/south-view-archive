@@ -13,6 +13,7 @@ import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
 import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
+import { PersonMaterials, PersonNotes } from './person-records-admin';
 
 type Fields = {
   name: string;
@@ -172,8 +173,8 @@ export function PeopleAdmin({
             <Users size={28} aria-hidden="true" />
             <h3>Choose a person</h3>
             <p>
-              Correct names, other names, years, themes, the summary and place connections without a
-              contribution.
+              Correct names, other names, years, themes, the summary, place connections, records,
+              oral histories and notes without a contribution.
             </p>
           </div>
         )}
@@ -372,11 +373,21 @@ function PersonEditor({
           onOpenPlace={onOpenPlace}
           onSaved={(edits, message) => saved(edits, message)}
         />
+        <PersonMaterials
+          person={person}
+          archive={archive}
+          onSaved={(edits, message) => saved(edits, message)}
+        />
+        <PersonNotes
+          person={person}
+          archive={archive}
+          onSaved={(edits, message) => saved(edits, message)}
+        />
         <ChangeHistory
           history={history.history}
           error={history.error}
           archive={archive}
-          note="Direct corrections to this person and their place connections. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
+          note="Direct corrections to this person, their place connections, records and notes. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
           onUndone={(edits) =>
             saved(edits, 'Undone. The record is back as it was, apart from later changes.')
           }

@@ -5,12 +5,18 @@ import { createStore, setStoreForTests } from '../packages/db/src/connection';
 import { getArchive } from '../packages/db/src/index';
 import { createDraft, finalizeSubmission, reviewSubmission } from '../packages/db/src/community';
 import {
+  createIssue,
   createLink,
+  createMaterial,
+  editIssue,
   editLink,
+  editMaterial,
   editPerson,
   editPlace,
   listStaffEdits,
+  removeIssue,
   removeLink,
+  removeMaterial,
   undoStaffEdit,
 } from '../packages/db/src/staff-edits';
 import { revertChange } from '../packages/db/src/revert';
@@ -253,6 +259,164 @@ test('staff edits and contributions undo independently', async (t) => {
         assert.ok(!(await getArchive()).relations.some((r) => r.id === created.link.id));
       },
     );
+    await t.test(
+      'a reviewer adds an oral history by link, corrects it, removes it and restores it',
+      async () => {
+        const before = await getArchive();
+        const king = before.people.find((item) => item.id === 'martin-luther-king-sr')!;
+        const material = {
+          kind: 'oral-history' as const,
+          title: 'Interview about Ebenezer',
+          description: 'A recorded interview held by the library.',
+          narrator: 'A. Narrator',
+          interviewer: '',
+          date: '1980',
+          eventDate: { kind: 'range' as const, startYear: 1931, endYear: 1975 },
+          relatedPersonIds: [king.id],
+          placeIds: [],
+        };
+        const link = {
+          title: '',
+          creator: '',
+          publisher: 'Example Library',
+          url: 'https://library.example.org/items/1',
+          rights: '',
+        };
+        await assert.rejects(
+          createMaterial(
+            {
+              personId: 'john-lewis',
+              material,
+              source: { mode: 'new', link: { ...link, url: 'not a link' } },
+              reason: 'Adding',
+            },
+            reviewer,
+          ),
+        );
+        await assert.rejects(
+          createMaterial(
+            {
+              personId: 'john-lewis',
+              material: { ...material, relatedPersonIds: ['john-lewis'] },
+              source: { mode: 'new', link },
+              reason: 'Adding',
+            },
+            reviewer,
+          ),
+          { code: 'BAD_REQUEST' },
+        );
+        const created = await createMaterial(
+          { personId: 'john-lewis', material, source: { mode: 'new', link }, reason: 'Adding' },
+          reviewer,
+        );
+        // The new link is a source of its own, written in the same action as the record.
+        assert.deepEqual(
+          created.edits.map((edit) => edit.targetTable),
+          ['sources', 'materials'],
+        );
+        let archive = await getArchive();
+        const source = archive.sources.find((item) => item.id === created.material.sourceId)!;
+        assert.equal(source.title, material.title);
+        assert.equal(source.kind, 'oral-history');
+        assert.ok(archive.materials.some((item) => item.id === created.material.id));
+
+        const fixed = await editMaterial(
+          created.material.id,
+          {
+            material: { ...material, narrator: '', title: 'Interview about Ebenezer Baptist' },
+            source: {
+              mode: 'existing',
+              sourceId: source.id,
+              link: { ...link, url: 'https://library.example.org/items/2' },
+            },
+            reason: 'Wrong link',
+          },
+          reviewer,
+        );
+        archive = await getArchive();
+        assert.equal(fixed.material.narrator, undefined);
+        assert.equal(
+          archive.sources.find((item) => item.id === source.id)!.url,
+          'https://library.example.org/items/2',
+        );
+        const history = await listStaffEdits({ personId: 'john-lewis' }, reviewer);
+        assert.ok(history.some((edit) => edit.targetTable === 'sources'));
+
+        const removed = await removeMaterial(created.material.id, 'Duplicate', reviewer);
+        assert.ok(!(await getArchive()).materials.some((m) => m.id === created.material.id));
+        await undoStaffEdit(removed.edits[0]!.id, 'Not a duplicate', reviewer);
+        assert.deepEqual(
+          (await getArchive()).materials.find((m) => m.id === created.material.id),
+          fixed.material,
+        );
+        // Undoing the correction puts back both the record's fields and the old link.
+        await undoStaffEdit(fixed.edits[0]!.id, 'Back', reviewer);
+        archive = await getArchive();
+        assert.equal(
+          archive.materials.find((m) => m.id === created.material.id)!.narrator,
+          'A. Narrator',
+        );
+        assert.equal(archive.sources.find((item) => item.id === source.id)!.url, link.url);
+        // Undoing the addition removes the record and its new link.
+        await undoStaffEdit(created.edits[0]!.id, 'Wrong person', reviewer);
+        archive = await getArchive();
+        assert.ok(!archive.materials.some((m) => m.id === created.material.id));
+        assert.ok(!archive.sources.some((item) => item.id === source.id));
+      },
+    );
+    await t.test('a reviewer adds, rewrites, removes and restores a note on a record', async () => {
+      const sourceId = (await lewis()).summaryCitations[0]!.sourceId;
+      const count = (await getArchive()).issues.length;
+      await assert.rejects(
+        createIssue(
+          {
+            personId: 'john-lewis',
+            field: 'birthYear',
+            note: 'Sources disagree on the year.',
+            sourceIds: ['no-such-source'],
+            reason: 'Adding',
+          },
+          reviewer,
+        ),
+        { code: 'NOT_FOUND' },
+      );
+      const created = await createIssue(
+        {
+          personId: 'john-lewis',
+          field: 'birthYear',
+          note: 'Sources disagree on the year.',
+          sourceIds: [sourceId],
+          reason: 'Adding',
+        },
+        reviewer,
+      );
+      let issues = (await getArchive()).issues;
+      assert.equal(issues.length, count + 1);
+      assert.equal(issues.find((item) => item.id === created.issue.id)!.note, created.issue.note);
+      await editIssue(
+        created.issue.id,
+        {
+          field: 'deathYear',
+          note: 'Sources disagree on the death year.',
+          sourceIds: [],
+          reason: 'Wrong field',
+        },
+        reviewer,
+      );
+      issues = (await getArchive()).issues;
+      assert.equal(issues.find((item) => item.id === created.issue.id)!.field, 'deathYear');
+      const removed = await removeIssue(created.issue.id, 'Settled', reviewer);
+      assert.equal((await getArchive()).issues.length, count);
+      await undoStaffEdit(removed.edits[0]!.id, 'Not settled', reviewer);
+      assert.equal((await getArchive()).issues.length, count + 1);
+      // Every existing note can be addressed by its row identifier.
+      assert.ok((await getArchive()).issues.every((item) => item.id));
+      // The note was rewritten after it was added, so undoing the addition is refused.
+      await assert.rejects(undoStaffEdit(created.edits[0]!.id, 'Clean up', reviewer), {
+        code: 'CONFLICT',
+      });
+      await removeIssue(created.issue.id, 'Clean up', reviewer);
+    });
     await t.test(
       'an earlier contribution can be withdrawn after a later one changed the same person',
       async () => {

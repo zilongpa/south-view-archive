@@ -15,7 +15,12 @@ export async function readStoreArchive(store: Store): Promise<ArchiveData> {
     const relations = await read('person_places');
     const materials = await read('materials');
     const sources = await read('sources');
-    const issues = await read('issues');
+    // Issue rows carry their identifier only in the row, so staff can address one note.
+    const issues = (
+      await tx.query<{ id: string; data: Record<string, unknown> }>(
+        'SELECT id, data FROM archive.issues ORDER BY id',
+      )
+    ).rows.map((row) => ({ ...row.data, id: row.id }));
     const credits = await read('credits');
     const contributions = await read('contributions');
     const crosswalk = (

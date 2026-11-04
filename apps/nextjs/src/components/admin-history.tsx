@@ -1,7 +1,12 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { History, LoaderCircle, Undo2 } from 'lucide-react';
-import type { ArchiveData, StaffEdit } from '@southview/validators';
+import {
+  formatEventDate,
+  type ArchiveData,
+  type EventDate,
+  type StaffEdit,
+} from '@southview/validators';
 import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
@@ -28,11 +33,32 @@ export const fieldLabels: Record<string, string> = {
   citations: 'Sources',
   personId: 'Person',
   placeId: 'Place',
+  title: 'Title',
+  kind: 'Type',
+  narrator: 'Narrator',
+  interviewer: 'Interviewer',
+  date: 'Recorded',
+  eventDate: 'Events date',
+  relatedPersonIds: 'Related people',
+  placeIds: 'Related places',
+  sourceId: 'Collection link',
+  creator: 'Creator',
+  publisher: 'Held by',
+  url: 'Web address',
+  rights: 'Rights',
+  field: 'Concerns',
+  note: 'Note',
+  sourceIds: 'Sources',
 };
 function shown(field: string, value: unknown) {
   if (value === undefined || value === null || value === '') return '—';
+  if (field === 'eventDate' && typeof value === 'object')
+    return formatEventDate(value as EventDate);
   if (field === 'coordinates' && Array.isArray(value))
     return value.map((n) => Number(n).toFixed(5)).join(', ');
+  // Lists of record identifiers mean nothing to staff; their count does.
+  if (field.endsWith('Ids') && Array.isArray(value))
+    return value.length ? `${value.length} chosen` : 'none';
   if (Array.isArray(value))
     return value.every((item) => typeof item === 'string')
       ? value.join(', ') || '—'
@@ -73,6 +99,11 @@ function describe(edit: StaffEdit, archive: ArchiveData) {
     const place = archive.places.find((item) => item.id === data.placeId);
     return `${action} connection: ${person ? displayPersonName(person.name) : 'a person'} — ${place?.name ?? 'a place'}`;
   }
+  if (edit.targetTable === 'materials')
+    return `${action} ${data.kind === 'oral-history' ? 'oral history' : 'record'}: ${String(data.title ?? '')}`;
+  if (edit.targetTable === 'sources')
+    return `${action} collection link: ${String(data.title ?? edit.targetId)}`;
+  if (edit.targetTable === 'issues') return `${action} note on this record`;
   return `${action} ${edit.targetTable}`;
 }
 
