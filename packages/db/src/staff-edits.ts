@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
+  applyLifeDates,
   contributionEntrySchema,
   issueSchema,
   materialSchema,
@@ -244,17 +245,8 @@ export async function editPerson(personId: string, raw: StaffPersonEdit, actor: 
     if (patch.aliases !== undefined) next.aliases = patch.aliases;
     if (patch.themes !== undefined) next.themes = patch.themes;
     if (patch.summary !== undefined) next.summary = patch.summary;
-    for (const field of ['birthYear', 'deathYear'] as const) {
-      if (patch[field] === undefined) continue;
-      if (patch[field] === null) delete next[field];
-      else next[field] = patch[field];
-    }
-    if (
-      typeof next.birthYear === 'number' &&
-      typeof next.deathYear === 'number' &&
-      next.birthYear > next.deathYear
-    )
-      throw new DomainError('BAD_REQUEST', 'The birth year must not be after the death year.');
+    const conflict = applyLifeDates(next, patch);
+    if (conflict) throw new DomainError('BAD_REQUEST', conflict);
     const person = personSchema.parse(next);
     return {
       result: { person },

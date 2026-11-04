@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { History, LoaderCircle, Undo2 } from 'lucide-react';
 import {
   formatEventDate,
+  formatLifeDate,
   type ArchiveData,
   type EventDate,
   type StaffEdit,
@@ -16,6 +17,8 @@ export const fieldLabels: Record<string, string> = {
   aliases: 'Other names',
   birthYear: 'Birth year',
   deathYear: 'Death year',
+  birthDate: 'Full birth date',
+  deathDate: 'Full death date',
   themes: 'Themes',
   summary: 'Summary',
   summaryCitations: 'Summary sources',
@@ -52,6 +55,8 @@ export const fieldLabels: Record<string, string> = {
 };
 function shown(field: string, value: unknown) {
   if (value === undefined || value === null || value === '') return '—';
+  if ((field === 'birthDate' || field === 'deathDate') && typeof value === 'string')
+    return formatLifeDate(undefined, value) ?? value;
   if (field === 'eventDate' && typeof value === 'object')
     return formatEventDate(value as EventDate);
   if (field === 'coordinates' && Array.isArray(value))

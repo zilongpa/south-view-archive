@@ -21,6 +21,9 @@ import {
 } from '../packages/db/src/staff-edits';
 import { revertChange } from '../packages/db/src/revert';
 import {
+  applyLifeDates,
+  formatLifeDate,
+  lifeDateSchema,
   reviewInputSchema,
   submissionInputSchema,
   type Actor,
@@ -28,6 +31,30 @@ import {
 
 const guest: Actor = { userId: null, email: null, reviewer: false };
 const reviewer: Actor = { userId: 'staff-reviewer', email: 'reviewer@example.org', reviewer: true };
+
+test('life dates read naturally and keep their year', () => {
+  assert.equal(formatLifeDate(1897, '1897-12-19'), 'December 19, 1897');
+  assert.equal(formatLifeDate(1897, '1897-12'), 'December 1897');
+  assert.equal(formatLifeDate(1897), '1897');
+  assert.equal(formatLifeDate(undefined), undefined);
+  assert.ok(lifeDateSchema.safeParse('2000-02-29').success);
+  assert.ok(!lifeDateSchema.safeParse('1900-02-29').success);
+  assert.ok(!lifeDateSchema.safeParse('1897-13').success);
+  // A date alone supplies its year; a new year alone drops a date it no longer matches.
+  const record: Record<string, unknown> = {};
+  assert.equal(applyLifeDates(record, { birthDate: '1897-12-19' }), null);
+  assert.equal(record.birthYear, 1897);
+  assert.equal(applyLifeDates(record, { birthYear: 1899 }), null);
+  assert.equal(record.birthDate, undefined);
+  // Within one year, the birth date must come first.
+  assert.match(
+    applyLifeDates(
+      { birthYear: 1900, deathYear: 1900 },
+      { birthDate: '1900-05-02', deathDate: '1900-05-01' },
+    )!,
+    /must not be after/,
+  );
+});
 
 test('revertChange undoes only what the write still holds', () => {
   // Untouched since: back to the previous value exactly.
@@ -450,6 +477,56 @@ test('staff edits and contributions undo independently', async (t) => {
       assert.equal(after.birthYear, 1940);
       assert.equal(after.deathYear, before.deathYear);
       assert.deepEqual(after.creditIds, before.creditIds);
+    });
+    await t.test('full birth and death dates stay in their years', async () => {
+      const before = await lewis();
+      // A day that does not exist, and a date outside the year being set, are refused.
+      await assert.rejects(
+        editPerson('john-lewis', { patch: { birthDate: '1940-02-30' }, reason: 'Date' }, reviewer),
+      );
+      await assert.rejects(
+        editPerson(
+          'john-lewis',
+          { patch: { birthYear: 1940, birthDate: '1941-02-21' }, reason: 'Date' },
+          reviewer,
+        ),
+        { code: 'BAD_REQUEST' },
+      );
+      const dated = await editPerson(
+        'john-lewis',
+        {
+          patch: { birthYear: 1940, birthDate: '1940-02-21', deathDate: '2020-07' },
+          reason: 'Full dates from the House biography',
+        },
+        reviewer,
+      );
+      assert.equal(dated.person.birthDate, '1940-02-21');
+      assert.equal(dated.person.deathDate, '2020-07');
+      assert.equal(dated.person.deathYear, 2020);
+      // A reviewer publishing a different year drops the full date it no longer matches.
+      const id = await publish('john-lewis', { personPatch: { birthYear: 1939 } });
+      let after = await lewis();
+      assert.equal(after.birthYear, 1939);
+      assert.equal(after.birthDate, undefined);
+      assert.equal(after.deathDate, '2020-07');
+      await withdraw(id);
+      after = await lewis();
+      assert.equal(after.birthYear, 1940);
+      assert.equal(after.birthDate, '1940-02-21');
+      // Clearing the year clears its date; undo restores both.
+      const cleared = await editPerson(
+        'john-lewis',
+        { patch: { deathYear: null }, reason: 'Unverified' },
+        reviewer,
+      );
+      assert.equal(cleared.person.deathDate, undefined);
+      await undoStaffEdit(cleared.edits[0]!.id, 'Verified after all', reviewer);
+      assert.equal((await lewis()).deathDate, '2020-07');
+      await undoStaffEdit(dated.edits[0]!.id, 'Back to years', reviewer);
+      after = await lewis();
+      assert.equal(after.birthDate, undefined);
+      assert.equal(after.deathDate, undefined);
+      assert.equal(after.birthYear, before.birthYear);
     });
   } finally {
     setStoreForTests(undefined);
