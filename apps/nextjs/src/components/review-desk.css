@@ -769,3 +769,135 @@
   border-left: 2px solid #d4cbbd;
   padding-left: 10px;
 }
+
+/* Archive admin: area tabs, the People editor and its change history. */
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -6px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.admin-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.admin-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--wine);
+  color: var(--wine);
+  font-weight: 600;
+}
+.admin-empty {
+  padding: 64px 28px;
+}
+.admin-people .review-detail-heading a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--wine);
+}
+.admin-form .community-fields {
+  display: grid;
+  gap: 16px;
+}
+.admin-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+.admin-history {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.admin-history h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font:
+    600 16px/1.4 Arial,
+    sans-serif;
+}
+.admin-history-note {
+  margin: 6px 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.admin-history ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.admin-history li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #fbf8f2;
+}
+.admin-history li.is-undone {
+  opacity: 0.7;
+}
+.admin-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.admin-history-tag {
+  border-radius: 999px;
+  padding: 0 8px;
+  background: var(--wine-light);
+  color: var(--wine);
+  font-weight: 600;
+}
+.admin-history-reason {
+  margin: 8px 0;
+  font-size: 15px;
+}
+.admin-history dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+.admin-history dl > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+}
+.admin-history dt {
+  color: var(--muted);
+}
+.admin-history dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.admin-undo {
+  margin-top: 10px;
+}
+@media (max-width: 760px) {
+  .admin-tabs {
+    margin: 0 0 10px;
+  }
+  .admin-tabs button {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 6px;
+  }
+  .admin-history dl > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

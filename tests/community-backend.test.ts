@@ -89,7 +89,7 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         assert.equal(snapshot.credits[0]?.id, 'initial-compilation');
         assert.equal(snapshot.contributions.length, 0);
         const versions = await store.query('SELECT version FROM archive.schema_migrations');
-        assert.equal(versions.rows.length, 5);
+        assert.equal(versions.rows.length, 6);
       },
     );
     await t.test(

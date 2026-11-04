@@ -19,7 +19,7 @@ export const copy = {
   awaitingReview: 'Your addition · awaiting review · not public yet',
   addPerson: 'Add a person',
   account: 'My contributions',
-  reviewDesk: 'Review desk',
+  reviewDesk: 'Archive admin',
   editParagraph: 'Edit this paragraph',
   requiredLegend: 'Fields marked * are required. Everything else is optional.',
   noEmail:

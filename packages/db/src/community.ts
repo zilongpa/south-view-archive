@@ -19,6 +19,7 @@ import {
   type Source,
 } from '@southview/validators';
 import { getStore, type Store } from './connection';
+import { revertChange } from './revert';
 
 export class DomainError extends Error {
   constructor(
@@ -62,11 +63,11 @@ function validReceipt(token: string | undefined, expected: string) {
   const stored = Buffer.from(expected, 'hex');
   return candidate.length === stored.length && timingSafeEqual(candidate, stored);
 }
-function requireReviewer(actor: Actor) {
+export function requireReviewer(actor: Actor) {
   if (!actor.reviewer || !actor.userId)
     throw new DomainError('FORBIDDEN', 'A reviewer account is required.');
 }
-async function writableStore() {
+export async function writableStore() {
   if (process.env.ARCHIVE_DATA_MODE === 'fixture')
     throw new DomainError(
       'READ_ONLY',
@@ -792,8 +793,16 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
   return entryId;
 }
 
+/** Checks a record rebuilt by a field-level undo before it is written back. */
+export function validCuratedRecord(table: 'persons' | 'places' | 'person_places', data: unknown) {
+  const schema =
+    table === 'persons' ? personSchema : table === 'places' ? placeSchema : relationSchema;
+  return schema.safeParse(data).success;
+}
+
 async function withdraw(tx: Store, row: SubmissionRow) {
-  // Curated edits are reverted only if no later reviewer has changed them.
+  // Each curated edit is undone field by field: what this contribution wrote goes back to what
+  // was there before, and anything a later contribution or staff edit changed is kept.
   const revisions = (
     await tx.query<{
       target_table: PublicTable;
@@ -808,24 +817,34 @@ async function withdraw(tx: Store, row: SubmissionRow) {
   await tx.query('DELETE FROM archive.contributions WHERE id = $1', [row.published_entry_id]);
   for (const revision of revisions) {
     if (!['persons', 'places', 'person_places'].includes(revision.target_table)) continue;
-    const matches =
-      (
-        await tx.query(
-          `SELECT id FROM archive.${revision.target_table} WHERE id=$1 AND data=$2::jsonb FOR UPDATE`,
-          [revision.target_id, JSON.stringify(revision.published_data)],
-        )
-      ).rows.length > 0;
-    if (!matches)
-      throw new DomainError(
-        'CONFLICT',
-        'A later publication changed this curated record. Resolve its dependent edits before withdrawing this contribution.',
-      );
-    if (revision.previous_data)
-      await tx.query(`UPDATE archive.${revision.target_table} SET data=$2::jsonb WHERE id=$1`, [
-        revision.target_id,
-        JSON.stringify(revision.previous_data),
-      ]);
-    else {
+    const table = revision.target_table as 'persons' | 'places' | 'person_places';
+    const current = (
+      await tx.query<{ data: Record<string, unknown> }>(
+        `SELECT data FROM archive.${table} WHERE id=$1 FOR UPDATE`,
+        [revision.target_id],
+      )
+    ).rows[0]?.data;
+    // Removed since by a staff edit: nothing of this contribution is left to undo.
+    if (!current) continue;
+    if (revision.previous_data) {
+      const restored = revertChange(revision.previous_data, revision.published_data, current);
+      if (!validCuratedRecord(table, restored))
+        throw new DomainError(
+          'CONFLICT',
+          'Later edits to this record cannot be separated from this contribution. Correct the record in the archive admin instead.',
+        );
+      if (!isDeepStrictEqual(restored, current))
+        await tx.query(`UPDATE archive.${table} SET data=$2::jsonb WHERE id=$1`, [
+          revision.target_id,
+          JSON.stringify(restored),
+        ]);
+    } else {
+      // This contribution created the record. Remove it only while nothing else has changed it.
+      if (!isDeepStrictEqual(current, revision.published_data))
+        throw new DomainError(
+          'CONFLICT',
+          'A later publication changed this curated record. Resolve its dependent edits before withdrawing this contribution.',
+        );
       if (revision.target_table === 'persons' || revision.target_table === 'places') {
         const field = revision.target_table === 'persons' ? 'relatedPersonIds' : 'placeIds';
         // These optional references live in public JSON, so a primary-ID FK alone

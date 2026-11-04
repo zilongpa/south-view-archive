@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { dataMode } from '@southview/db/connection';
 import * as repository from '@southview/db/community';
+import { editPerson, listStaffEdits, undoStaffEdit } from '@southview/db/staff-edits';
 import { getSession, getSignInMethods, isReviewer } from '@southview/services/auth';
 import { savePhoto, InvalidPhotoError } from '@southview/services/photos';
 import { getStorage, MAX_PHOTO_BYTES } from '@southview/services/storage';
@@ -11,6 +12,7 @@ import {
   submissionInputSchema,
   photoMetadataSchema,
   reviewInputSchema,
+  staffPersonEditSchema,
   type Actor,
   type SubmissionRecord,
 } from '@southview/validators';
@@ -213,6 +215,23 @@ async function handle(request: Request, context: Context): Promise<Response> {
         const result = await repository.reviewSubmission(path[1]!, review, actor);
         return json({ ...result, submission: privateView(result.submission, actor) });
       }
+    }
+    // Archive admin: direct staff corrections, each recorded with a reason and undoable.
+    if (path[0] === 'admin') {
+      if (!actor.reviewer) throw new HttpError(403, 'Staff access is required.');
+      if (path.length === 3 && path[1] === 'persons' && method === 'GET')
+        return json({
+          edits: await listStaffEdits({ table: 'persons', id: path[2]! }, actor),
+        });
+      if (path.length === 3 && path[1] === 'persons' && method === 'POST')
+        return json(
+          await editPerson(path[2]!, staffPersonEditSchema.parse(await bodyJSON(request)), actor),
+        );
+      if (path.length === 4 && path[1] === 'edits' && path[3] === 'undo' && method === 'POST') {
+        const { reason } = z.object({ reason: z.string() }).parse(await bodyJSON(request));
+        return json(await undoStaffEdit(path[2]!, reason, actor));
+      }
+      throw new HttpError(404, 'Not found.');
     }
     if (path[0] === 'submissions' && path[1]) {
       const id = path[1];
@@ -454,7 +473,9 @@ async function handle(request: Request, context: Context): Promise<Response> {
         {
           error:
             code === 'NOT_FOUND'
-              ? 'Contribution not found. Check your private receipt link.'
+              ? error instanceof Error && error.message
+                ? error.message
+                : 'Contribution not found. Check your private receipt link.'
               : code === 'FORBIDDEN'
                 ? 'You do not have access to this action.'
                 : error instanceof Error
