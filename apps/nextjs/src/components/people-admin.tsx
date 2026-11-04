@@ -16,6 +16,7 @@ import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
 import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 import { PersonMaterials, PersonNotes } from './person-records-admin';
+import { StoryEditor } from './story-admin';
 
 type Fields = {
   name: string;
@@ -226,13 +227,14 @@ function PersonEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [storyDirty, setStoryDirty] = useState(false);
   const history = useStaffHistory(`/admin/persons/${encodeURIComponent(person.id)}`);
   const patch = patchFor(fields, savedFields);
   const changed = Object.keys(patch);
 
   useEffect(() => {
-    onDirtyChange(changed.length > 0 || !!reason.trim());
-  }, [changed.length, reason, onDirtyChange]);
+    onDirtyChange(changed.length > 0 || !!reason.trim() || storyDirty);
+  }, [changed.length, reason, storyDirty, onDirtyChange]);
 
   function edit(key: keyof Fields, value: string) {
     setFields((current) => ({ ...current, [key]: value }));
@@ -383,6 +385,12 @@ function PersonEditor({
             )}
           </div>
         </form>
+        <StoryEditor
+          person={person}
+          archive={archive}
+          onDirtyChange={setStoryDirty}
+          onSaved={(edits, message) => saved(edits, message)}
+        />
         <PersonLinks
           person={person}
           archive={archive}
@@ -403,7 +411,7 @@ function PersonEditor({
           history={history.history}
           error={history.error}
           archive={archive}
-          note="Direct corrections to this person, their place connections, records and notes. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
+          note="Direct corrections to this person, their story, place connections, records and notes. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
           onUndone={(edits) =>
             saved(edits, 'Undone. The record is back as it was, apart from later changes.')
           }

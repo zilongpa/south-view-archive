@@ -340,6 +340,37 @@ export const staffLinkCreateSchema = z.object({
 });
 export type StaffLinkCreate = z.infer<typeof staffLinkCreateSchema>;
 export const staffRemoveSchema = z.object({ reason: staffReasonSchema });
+/**
+ * A person's story as staff rewrote it: the paragraphs in their new order, each either an
+ * existing one (by its position in `base`, the story as the editor loaded it) or a new one.
+ * Paragraphs left out are removed.
+ */
+export const staffBiographySchema = z.object({
+  base: z.array(z.unknown()).max(500),
+  paragraphs: z
+    .array(
+      z.object({
+        from: z.number().int().min(0).optional(),
+        text: z
+          .string()
+          .trim()
+          .min(1, 'A paragraph cannot be empty. Remove it instead.')
+          .max(20000),
+        citations: z
+          .array(
+            z.object({
+              sourceId: z.string().min(1).max(200),
+              locator: z.string().trim().max(200).optional(),
+            }),
+          )
+          .min(1, 'Cite at least one source for each paragraph.')
+          .max(20),
+      }),
+    )
+    .max(500),
+  reason: staffReasonSchema,
+});
+export type StaffBiography = z.infer<typeof staffBiographySchema>;
 /** Where a record or oral history is held: a link to the collection, never an uploaded file. */
 export const staffSourceLinkSchema = z.object({
   /** Blank uses the record's own title. */
