@@ -9,6 +9,7 @@
     "./seed": "./src/seed.ts",
     "./connection": "./src/connection.ts",
     "./community": "./src/community.ts",
+    "./staff-edits": "./src/staff-edits.ts",
     "./vet": "./src/vet.ts"
   },
   "scripts": {

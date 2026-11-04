@@ -142,6 +142,59 @@ export const contributionEntrySchema = z
     ...entry,
     relatedPersonIds: entry.relatedPersonIds.filter((id) => id !== entry.personId),
   }));
+/** Edits to a person record's own fields. Omitted fields keep their current values. */
+export const personPatchSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Enter the person’s public name, or leave it as it was.')
+    .max(160)
+    .optional(),
+  aliases: z
+    .array(z.string().trim().min(1, 'Remove the empty entry under other names.').max(160))
+    .max(20)
+    .optional(),
+  birthYear: eventYearSchema.nullable().optional(),
+  deathYear: eventYearSchema.nullable().optional(),
+  themes: z
+    .array(z.string().trim().min(1, 'Remove the empty theme entry.').max(80))
+    .max(20)
+    .optional(),
+  summary: z
+    .string()
+    .trim()
+    .min(1, 'Enter a summary for the person, or leave it as it was.')
+    .max(4000)
+    .optional(),
+});
+/** Why a staff member is changing a record directly; shown in the change history. */
+export const staffReasonSchema = z
+  .string()
+  .trim()
+  .min(3, 'Say briefly why you are making this change.')
+  .max(1000);
+export const staffPersonEditSchema = z.object({
+  patch: personPatchSchema,
+  reason: staffReasonSchema,
+});
+export type StaffPersonEdit = z.infer<typeof staffPersonEditSchema>;
+/** One direct staff change to a public record, as listed in the archive admin's history. */
+export type StaffEdit = {
+  id: string;
+  targetTable: 'persons' | 'places' | 'person_places' | 'materials';
+  targetId: string;
+  reason: string;
+  actorEmail: string | null;
+  createdAt: string;
+  /** Top-level fields whose value differs between the record before and after. */
+  changedFields: string[];
+  previous: Record<string, unknown> | null;
+  next: Record<string, unknown> | null;
+  /** Set on the entry that undid another entry. */
+  undoOf: string | null;
+  /** Set on an entry that has been undone. */
+  undoneAt: string | null;
+};
 export const reviewInputSchema = z
   .object({
     action: z.enum(['publish', 'needs-information', 'reject', 'withdraw']),
@@ -198,32 +251,7 @@ export const reviewInputSchema = z
     approvedPhotoIds: z.array(z.string()).max(5).optional(),
     applyTo: z.enum(['entry', 'biography', 'place', 'portrait']).default('entry'),
     /** Reviewer edits to the person record itself. Omitted fields keep their current values. */
-    personPatch: z
-      .object({
-        name: z
-          .string()
-          .trim()
-          .min(1, 'Enter the person’s public name, or leave it as it was.')
-          .max(160)
-          .optional(),
-        aliases: z
-          .array(z.string().trim().min(1, 'Remove the empty entry under other names.').max(160))
-          .max(20)
-          .optional(),
-        birthYear: eventYearSchema.nullable().optional(),
-        deathYear: eventYearSchema.nullable().optional(),
-        themes: z
-          .array(z.string().trim().min(1, 'Remove the empty theme entry.').max(80))
-          .max(20)
-          .optional(),
-        summary: z
-          .string()
-          .trim()
-          .min(1, 'Enter a summary for the person, or leave it as it was.')
-          .max(4000)
-          .optional(),
-      })
-      .optional(),
+    personPatch: personPatchSchema.optional(),
     placePatch: z
       .object({
         placeId: z.string(),

@@ -7,7 +7,7 @@ import '@/components/community.css';
 import '@/components/review-desk.css';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
-  title: 'Contribution review desk',
+  title: 'Archive admin',
   robots: { index: false, follow: false },
   referrer: 'no-referrer',
 };
@@ -17,7 +17,7 @@ export default async function ContributionReviewPage() {
     <div className="review-page">
       <SiteNavigation workspace />
       <main id="main-content" className="review-main">
-        <Suspense fallback={<p className="review-access">Opening the review desk…</p>}>
+        <Suspense fallback={<p className="review-access">Opening the archive admin…</p>}>
           <ReviewDesk archive={archive} />
         </Suspense>
       </main>

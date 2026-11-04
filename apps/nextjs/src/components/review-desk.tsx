@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   RefreshCw,
   ShieldCheck,
+  Users,
 } from 'lucide-react';
 import {
   reviewInputSchema,
@@ -33,6 +34,7 @@ import {
   type ReviewState,
 } from '@/lib/review-state';
 import { CommunityNotice } from './community-shell';
+import { PeopleAdmin } from './people-admin';
 import { StoryContextFields } from './story-context-fields';
 import { RecordPicker } from './record-picker';
 import { PrivateSubmissionPhoto } from './submission-manager';
@@ -201,6 +203,11 @@ function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['ap
 export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   const params = useSearchParams();
   const [state, setState] = useState(() => parseReviewState(params));
+  // The admin has two areas: the contribution queue and direct record corrections.
+  const [tab, setTab] = useState<'contributions' | 'people'>(() =>
+    params.get('tab') === 'people' ? 'people' : 'contributions',
+  );
+  const [adminPerson, setAdminPerson] = useState<string | null>(() => params.get('person'));
   const [session, setSession] = useState<CommunitySession | null>(null);
   const [items, setItems] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -319,7 +326,10 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
       } else {
         if (dirty.current) setRevision((value) => value + 1);
         dirty.current = false;
-        const next = parseReviewState(new URLSearchParams(window.location.search));
+        const search = new URLSearchParams(window.location.search);
+        const next = parseReviewState(search);
+        setTab(search.get('tab') === 'people' ? 'people' : 'contributions');
+        setAdminPerson(search.get('person'));
         setState(next);
         setMobileDetail(!!next.submission);
         currentUrl.current = window.location.href;
@@ -352,18 +362,35 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   }
   const visible = filterReviewQueue(items, state, archive);
   const selected = selectedReview(items, visible, state.submission);
+  function peopleUrl(personId: string | null) {
+    const search = new URLSearchParams({ tab: 'people' });
+    if (personId) search.set('person', personId);
+    return `/admin/contributions?${search}`;
+  }
+  function switchTab(next: 'contributions' | 'people') {
+    if (next === tab || !confirmLeave()) return;
+    dirty.current = false;
+    setTab(next);
+    setNotice('');
+    window.history.replaceState(
+      null,
+      '',
+      next === 'people' ? peopleUrl(adminPerson) : reviewUrl(state),
+    );
+    currentUrl.current = window.location.href;
+  }
   useEffect(() => {
-    if (selected && !state.submission) {
+    if (tab === 'contributions' && selected && !state.submission) {
       const next = { ...state, submission: selected.id };
       setState(next);
       window.history.replaceState(null, '', reviewUrl(next));
       currentUrl.current = window.location.href;
     }
-  }, [selected, state]);
+  }, [selected, state, tab]);
   if (loading && !session)
     return (
       <div className="review-access community-loading">
-        <LoaderCircle size={22} className="community-spinner" /> Opening the review desk…
+        <LoaderCircle size={22} className="community-spinner" /> Opening the archive admin…
       </div>
     );
   if (!session?.reviewer)
@@ -382,7 +409,7 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
     <>
       <div className="review-desk-heading">
         <div>
-          <h1>Review desk</h1>
+          <h1>Archive admin</h1>
           <span>
             <ShieldCheck size={15} aria-hidden="true" /> Staff workspace
           </span>
@@ -412,83 +439,111 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
           </button>
         </div>
       </div>
+      <div className="admin-tabs" role="tablist" aria-label="Archive admin areas">
+        <button
+          role="tab"
+          aria-selected={tab === 'contributions'}
+          onClick={() => switchTab('contributions')}
+        >
+          <Inbox size={17} aria-hidden="true" /> Contributions
+        </button>
+        <button role="tab" aria-selected={tab === 'people'} onClick={() => switchTab('people')}>
+          <Users size={17} aria-hidden="true" /> People
+        </button>
+      </div>
       {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
-      {vetError && <CommunityNotice kind="error">{vetError}</CommunityNotice>}
-      {(startingVet || vet?.runningSubmissionId) && (
-        <p className="review-filter-note" role="status">
-          A Vet check is running. You can browse submissions and make review decisions while it
-          completes.
-        </p>
-      )}
-      {!loaded ? (
-        <div className="review-access">
-          {loading ? 'Loading submissions…' : 'The queue is unavailable. Refresh to try again.'}
-        </div>
+      {tab === 'people' ? (
+        <PeopleAdmin
+          archive={archive}
+          initialPersonId={adminPerson}
+          onDirtyChange={onDirtyChange}
+          confirmLeave={confirmLeave}
+          onPersonChange={(personId) => {
+            setAdminPerson(personId);
+            window.history.replaceState(null, '', peopleUrl(personId));
+            currentUrl.current = window.location.href;
+          }}
+        />
       ) : (
         <>
-          <ReviewStats
-            items={items}
-            selected={state.status}
-            onSelect={(status) => update({ status })}
-          />
-          <div className="review-workspace" data-mobile-detail={mobileDetail}>
-            <ReviewQueue
-              items={items}
-              archive={archive}
-              state={state}
-              selectedId={selected?.id}
-              onChange={(patch) => update(patch)}
-              onSelect={(submission) => update({ submission }, true)}
-              vet={vet}
-              startingVet={startingVet}
-            />
-            <div className="review-detail-scroll">
-              <button
-                className="review-mobile-back community-text-button"
-                onClick={() => setMobileDetail(false)}
-              >
-                <ArrowLeft size={17} /> Back to submissions
-              </button>
-              {notice && <CommunityNotice kind="success">{notice}</CommunityNotice>}
-              {selected && !visible.some((item) => item.id === selected.id) && (
-                <p className="review-filter-note">
-                  This submission is outside the current filters. It stays open until you select
-                  another.
-                </p>
-              )}
-              {selected ? (
-                <ReviewEditor
-                  key={`${selected.id}-${selected.updatedAt}-${revision}`}
-                  record={selected}
-                  archive={archive}
-                  onDirtyChange={onDirtyChange}
-                  vet={vetState(vet, selected.id, startingVet)}
-                  canVet={!!vet?.configured && !startingVet && !vet.runningSubmissionId}
-                  onVet={() => {
-                    void runCheck(selected.id);
-                  }}
-                  onReviewed={(record) => {
-                    dirty.current = false;
-                    setItems((previous) =>
-                      previous.map((item) => (item.id === record.id ? record : item)),
-                    );
-                    setNotice(`Review saved: ${reviewLabels[record.status]}.`);
-                    void loadVet();
-                  }}
-                />
-              ) : (
-                <div className="review-empty">
-                  <Inbox size={32} />
-                  <h2>{state.submission ? 'Submission unavailable' : 'A clear desk'}</h2>
-                  <p>
-                    {state.submission
-                      ? 'Choose a submission from the queue.'
-                      : 'Choose another filter or refresh the queue.'}
-                  </p>
-                </div>
-              )}
+          {vetError && <CommunityNotice kind="error">{vetError}</CommunityNotice>}
+          {(startingVet || vet?.runningSubmissionId) && (
+            <p className="review-filter-note" role="status">
+              A Vet check is running. You can browse submissions and make review decisions while it
+              completes.
+            </p>
+          )}
+          {!loaded ? (
+            <div className="review-access">
+              {loading ? 'Loading submissions…' : 'The queue is unavailable. Refresh to try again.'}
             </div>
-          </div>
+          ) : (
+            <>
+              <ReviewStats
+                items={items}
+                selected={state.status}
+                onSelect={(status) => update({ status })}
+              />
+              <div className="review-workspace" data-mobile-detail={mobileDetail}>
+                <ReviewQueue
+                  items={items}
+                  archive={archive}
+                  state={state}
+                  selectedId={selected?.id}
+                  onChange={(patch) => update(patch)}
+                  onSelect={(submission) => update({ submission }, true)}
+                  vet={vet}
+                  startingVet={startingVet}
+                />
+                <div className="review-detail-scroll">
+                  <button
+                    className="review-mobile-back community-text-button"
+                    onClick={() => setMobileDetail(false)}
+                  >
+                    <ArrowLeft size={17} /> Back to submissions
+                  </button>
+                  {notice && <CommunityNotice kind="success">{notice}</CommunityNotice>}
+                  {selected && !visible.some((item) => item.id === selected.id) && (
+                    <p className="review-filter-note">
+                      This submission is outside the current filters. It stays open until you select
+                      another.
+                    </p>
+                  )}
+                  {selected ? (
+                    <ReviewEditor
+                      key={`${selected.id}-${selected.updatedAt}-${revision}`}
+                      record={selected}
+                      archive={archive}
+                      onDirtyChange={onDirtyChange}
+                      vet={vetState(vet, selected.id, startingVet)}
+                      canVet={!!vet?.configured && !startingVet && !vet.runningSubmissionId}
+                      onVet={() => {
+                        void runCheck(selected.id);
+                      }}
+                      onReviewed={(record) => {
+                        dirty.current = false;
+                        setItems((previous) =>
+                          previous.map((item) => (item.id === record.id ? record : item)),
+                        );
+                        setNotice(`Review saved: ${reviewLabels[record.status]}.`);
+                        void loadVet();
+                      }}
+                    />
+                  ) : (
+                    <div className="review-empty">
+                      <Inbox size={32} />
+                      <h2>{state.submission ? 'Submission unavailable' : 'A clear desk'}</h2>
+                      <p>
+                        {state.submission
+                          ? 'Choose a submission from the queue.'
+                          : 'Choose another filter or refresh the queue.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </>
