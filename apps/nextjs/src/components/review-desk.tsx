@@ -33,6 +33,9 @@ import {
   vetState,
   type VetState,
   type ReviewState,
+  adminRecordUrl,
+  parseAdminPath,
+  type AdminTab,
 } from '@/lib/review-state';
 import { CommunityNotice } from './community-shell';
 import { PeopleAdmin } from './people-admin';
@@ -205,18 +208,26 @@ function placementExplanation(record: SubmissionRecord, applyTo: ReviewInput['ap
   return '';
 }
 
-type AdminTab = 'contributions' | 'people' | 'places';
-const adminTab = (value: string | null): AdminTab =>
-  value === 'people' || value === 'places' ? value : 'contributions';
-
-export function ReviewDesk({ archive }: { archive: ArchiveData }) {
+export function ReviewDesk({
+  archive,
+  initialTab,
+  initialRecordId,
+}: {
+  archive: ArchiveData;
+  initialTab: AdminTab;
+  initialRecordId: string | null;
+}) {
   const params = useSearchParams();
   const [state, setState] = useState(() => parseReviewState(params));
   // The admin has two areas: the contribution queue and direct record corrections.
-  const [tab, setTab] = useState<AdminTab>(() => adminTab(params.get('tab')));
-  const [adminPerson, setAdminPerson] = useState<string | null>(() => params.get('person'));
+  const [tab, setTab] = useState<AdminTab>(initialTab);
+  const [adminPerson, setAdminPerson] = useState<string | null>(
+    initialTab === 'people' ? initialRecordId : null,
+  );
   const [adminEntry, setAdminEntry] = useState<string | null>(null);
-  const [adminPlace, setAdminPlace] = useState<string | null>(() => params.get('place'));
+  const [adminPlace, setAdminPlace] = useState<string | null>(
+    initialTab === 'places' ? initialRecordId : null,
+  );
   // Server data with every change saved during this visit applied, shared by the record tabs.
   const admin = useAdminArchive(archive);
   // Bumped when another tab opens a record, so the record tab starts on it.
@@ -341,9 +352,11 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
         dirty.current = false;
         const search = new URLSearchParams(window.location.search);
         const next = parseReviewState(search);
-        setTab(adminTab(search.get('tab')));
-        setAdminPerson(search.get('person'));
-        setAdminPlace(search.get('place'));
+        const location = parseAdminPath(window.location.pathname);
+        setTab(location.tab);
+        if (location.tab === 'people') setAdminPerson(location.recordId);
+        if (location.tab === 'places') setAdminPlace(location.recordId);
+        setNav((value) => value + 1);
         setState(next);
         setMobileDetail(!!next.submission);
         currentUrl.current = window.location.href;
@@ -376,11 +389,7 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   }
   const visible = filterReviewQueue(items, state, archive);
   const selected = selectedReview(items, visible, state.submission);
-  function recordUrl(next: 'people' | 'places', id: string | null) {
-    const search = new URLSearchParams({ tab: next });
-    if (id) search.set(next === 'people' ? 'person' : 'place', id);
-    return `/admin/contributions?${search}`;
-  }
+  const recordUrl = adminRecordUrl;
   function go(next: AdminTab, recordId?: string) {
     if (next === 'people' && recordId !== undefined) setAdminPerson(recordId);
     if (next === 'places' && recordId !== undefined) setAdminPlace(recordId);
@@ -396,6 +405,10 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
     );
     currentUrl.current = window.location.href;
   }
+  // The page title follows the area, as it would on a fresh load of that address.
+  useEffect(() => {
+    document.title = `${tab === 'people' ? 'People · ' : tab === 'places' ? 'Places · ' : ''}Archive admin · South-View`;
+  }, [tab]);
   function switchTab(next: AdminTab) {
     if (next === tab || !confirmLeave()) return;
     dirty.current = false;
@@ -422,7 +435,14 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
           Sign in with your assigned review account to open this workspace.
         </CommunityNotice>
         {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
-        <Link className="community-primary" href="/sign-in?next=%2Fadmin%2Fcontributions">
+        <Link
+          className="community-primary"
+          href={`/sign-in?next=${encodeURIComponent(
+            initialTab === 'contributions'
+              ? '/admin/contributions'
+              : adminRecordUrl(initialTab, initialRecordId),
+          )}`}
+        >
           Sign in to review <ArrowRight size={17} />
         </Link>
       </div>
@@ -437,19 +457,16 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
           </span>
         </div>
         <div className="review-account">
-          <details>
-            <summary>Reviewer account</summary>
-            <p>{session.user?.email}</p>
-            <button
-              className="community-text-button"
-              onClick={() => {
-                if (confirmLeave())
-                  void signOutCommunity().catch((failure) => setError(failure.message));
-              }}
-            >
-              Sign out
-            </button>
-          </details>
+          <button
+            className="community-text-button"
+            title={session.user?.email ? `Signed in as ${session.user.email}` : undefined}
+            onClick={() => {
+              if (confirmLeave())
+                void signOutCommunity().catch((failure) => setError(failure.message));
+            }}
+          >
+            Sign out
+          </button>
           <button
             className="community-secondary"
             disabled={loading}

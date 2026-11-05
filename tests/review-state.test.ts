@@ -7,6 +7,8 @@ import {
   type SubmissionRecord,
 } from '../packages/validators/src/community';
 import {
+  adminRecordUrl,
+  parseAdminPath,
   filterReviewQueue,
   parseReviewState,
   reviewUrl,
@@ -153,4 +155,18 @@ test('review validation names the field that is missing instead of a raw length 
     (r) => r.error?.issues[0]?.message,
   ))
     assert.equal(message?.includes('Too small'), false);
+});
+
+test('each admin area has its own address', () => {
+  assert.equal(adminRecordUrl('people', null), '/admin/people');
+  assert.equal(adminRecordUrl('places', 'king-sr-south-view'), '/admin/places/king-sr-south-view');
+  assert.deepEqual(parseAdminPath('/admin/people/john-lewis'), {
+    tab: 'people',
+    recordId: 'john-lewis',
+  });
+  assert.deepEqual(parseAdminPath('/admin/places'), { tab: 'places', recordId: null });
+  assert.deepEqual(parseAdminPath('/admin/contributions'), {
+    tab: 'contributions',
+    recordId: null,
+  });
 });

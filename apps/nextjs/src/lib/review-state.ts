@@ -49,6 +49,21 @@ export function parseReviewState(params: { get(name: string): string | null }): 
     submission: params.get('submission')?.slice(0, 120) || null,
   };
 }
+/** The admin's three areas: the contribution queue, people and places. */
+export type AdminTab = 'contributions' | 'people' | 'places';
+/** /admin/people, /admin/people/<id>, and the same for places. */
+export function adminRecordUrl(tab: 'people' | 'places', id: string | null) {
+  return `/admin/${tab}${id ? `/${encodeURIComponent(id)}` : ''}`;
+}
+/** Which area and record an admin address shows. */
+export function parseAdminPath(pathname: string): { tab: AdminTab; recordId: string | null } {
+  const match = pathname.match(/^\/admin\/(people|places)(?:\/([^/]+))?\/?$/);
+  if (!match) return { tab: 'contributions', recordId: null };
+  return {
+    tab: match[1] as 'people' | 'places',
+    recordId: match[2] ? decodeURIComponent(match[2]) : null,
+  };
+}
 export function reviewUrl(state: ReviewState) {
   const params = new URLSearchParams();
   if (state.status !== 'pending') params.set('status', state.status);
