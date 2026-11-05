@@ -8,6 +8,8 @@ import {
   createIssue,
   createLink,
   createMaterial,
+  deleteRecord,
+  deletionImpact,
   editBiography,
   editContribution,
   editIssue,
@@ -15,6 +17,7 @@ import {
   editMaterial,
   editPerson,
   editPlace,
+  listDeleted,
   listStaffEdits,
   removeIssue,
   removeLink,
@@ -604,6 +607,130 @@ test('staff edits and contributions undo independently', async (t) => {
       archive = await getArchive();
       assert.ok(!archive.contributions.some((item) => item.id === id));
       assert.ok(!archive.sources.some((item) => item.url === `/contributions/${id}`));
+    });
+    await t.test('deleting a person or place takes its dependents and restores whole', async () => {
+      // The original people are matched in the grave-navigation crosswalk and cannot go.
+      const lewisImpact = await deletionImpact('person', 'john-lewis', reviewer);
+      assert.ok(lewisImpact.blockers.some((text) => text.includes('Grave Navigation')));
+      await assert.rejects(deleteRecord('person', 'john-lewis', 'Test', reviewer), {
+        code: 'CONFLICT',
+      });
+
+      const archive = await getArchive();
+      const lewisRecord = archive.people.find((p) => p.id === 'john-lewis')!;
+      const sourceId = lewisRecord.summaryCitations[0]!.sourceId;
+      const place = archive.places.find((p) =>
+        archive.relations.some((r) => r.placeId === p.id && r.personId === 'john-lewis'),
+      )!;
+      await store.query('INSERT INTO archive.persons (id, data) VALUES ($1, $2::jsonb)', [
+        'test-duplicate',
+        JSON.stringify({ ...lewisRecord, id: 'test-duplicate', name: 'Duplicate Lewis' }),
+      ]);
+      const link = await createLink(
+        {
+          personId: 'test-duplicate',
+          placeId: place.id,
+          label: 'Duplicate link',
+          description: '',
+          sourceId,
+          reason: 'Setup',
+        },
+        reviewer,
+      );
+      await createIssue(
+        {
+          personId: 'test-duplicate',
+          field: 'other',
+          note: 'A note on the duplicate record.',
+          sourceIds: [],
+          reason: 'Setup',
+        },
+        reviewer,
+      );
+      const mention = await createMaterial(
+        {
+          personId: 'john-lewis',
+          material: {
+            kind: 'document',
+            title: 'A record naming both',
+            description: 'A record that names the duplicate too.',
+            narrator: '',
+            interviewer: '',
+            date: '',
+            eventDate: { kind: 'unknown' },
+            relatedPersonIds: ['test-duplicate'],
+            placeIds: [place.id],
+          },
+          source: { mode: 'existing', sourceId },
+          reason: 'Setup',
+        },
+        reviewer,
+      );
+      const before = await getArchive();
+      const impact = await deletionImpact('person', 'test-duplicate', reviewer);
+      assert.deepEqual(impact, {
+        removes: { links: 1, materials: 0, issues: 1 },
+        mentions: 1,
+        blockers: [],
+      });
+      const removed = await deleteRecord(
+        'person',
+        'test-duplicate',
+        'Duplicate of John Lewis',
+        reviewer,
+      );
+      let after = await getArchive();
+      assert.ok(!after.people.some((p) => p.id === 'test-duplicate'));
+      assert.ok(!after.relations.some((r) => r.id === link.link.id));
+      assert.ok(!after.issues.some((i) => i.personId === 'test-duplicate'));
+      assert.deepEqual(
+        after.materials.find((m) => m.id === mention.material.id)!.relatedPersonIds,
+        [],
+      );
+      const deleted = await listDeleted('person', reviewer);
+      assert.equal(deleted[0]!.targetId, 'test-duplicate');
+      await undoStaffEdit(removed.edits[0]!.id, 'Not a duplicate after all', reviewer);
+      after = await getArchive();
+      assert.deepEqual(after.people, before.people);
+      assert.deepEqual(after.relations, before.relations);
+      assert.deepEqual(after.materials, before.materials);
+      assert.deepEqual(after.issues, before.issues);
+      assert.ok(
+        !(await listDeleted('person', reviewer)).some((e) => e.targetId === 'test-duplicate'),
+      );
+
+      // A place goes with everyone's connections to it and its mentions; a pending submission
+      // about it holds the delete back.
+      const receipt = randomUUID() + randomUUID();
+      const { submission: pending } = await createDraft(
+        submissionInputSchema.parse({ ...submission('john-lewis'), placeIds: [place.id] }),
+        guest,
+        receipt,
+      );
+      await finalizeSubmission(pending.id, { ...guest, receiptToken: receipt });
+      assert.equal((await deletionImpact('place', place.id, reviewer)).blockers.length, 1);
+      await reviewSubmission(
+        pending.id,
+        reviewInputSchema.parse({ action: 'reject', authorMessage: 'Not for the archive.' }),
+        reviewer,
+      );
+      const placeImpact = await deletionImpact('place', place.id, reviewer);
+      assert.deepEqual(placeImpact.blockers, []);
+      assert.ok(placeImpact.removes.links >= 2);
+      const gone = await deleteRecord('place', place.id, 'Added twice', reviewer);
+      after = await getArchive();
+      assert.ok(!after.places.some((p) => p.id === place.id));
+      assert.ok(!after.relations.some((r) => r.placeId === place.id));
+      assert.ok(!after.materials.some((m) => m.placeIds.includes(place.id)));
+      await undoStaffEdit(gone.edits[0]!.id, 'Needed', reviewer);
+      after = await getArchive();
+      assert.deepEqual(after.places, before.places);
+      assert.deepEqual(after.relations, before.relations);
+      assert.deepEqual(after.materials, before.materials);
+
+      // Clean up the setup.
+      await removeMaterial(mention.material.id, 'Clean up', reviewer);
+      await deleteRecord('person', 'test-duplicate', 'Clean up', reviewer);
     });
     await t.test('full birth and death dates stay in their years', async () => {
       const before = await lewis();

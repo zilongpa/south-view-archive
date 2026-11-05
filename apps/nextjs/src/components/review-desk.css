@@ -1087,3 +1087,21 @@ form.admin-link-editor {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.admin-delete h3 {
+  color: #9b2c2c;
+}
+.admin-danger-button {
+  background: #9b2c2c;
+  border-color: #9b2c2c;
+}
+.admin-recently-deleted {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow: auto;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--line);
+}
+.admin-recently-deleted h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
