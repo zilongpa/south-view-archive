@@ -831,7 +831,17 @@ async function withdraw(tx: Store, row: SubmissionRow) {
     // Removed since by a staff edit: nothing of this contribution is left to undo.
     if (!current) continue;
     if (revision.previous_data) {
-      const restored = revertChange(revision.previous_data, revision.published_data, current);
+      // A portrait this contribution supplied leaves with it, even if its credit was corrected.
+      let base = current;
+      const supplied = (revision.published_data.portrait as { url?: string } | undefined)?.url;
+      if (
+        table === 'persons' &&
+        supplied &&
+        (current.portrait as { url?: string } | undefined)?.url === supplied &&
+        (revision.previous_data.portrait as { url?: string } | undefined)?.url !== supplied
+      )
+        base = { ...current, portrait: revision.published_data.portrait };
+      const restored = revertChange(revision.previous_data, revision.published_data, base);
       if (!validCuratedRecord(table, restored))
         throw new DomainError(
           'CONFLICT',

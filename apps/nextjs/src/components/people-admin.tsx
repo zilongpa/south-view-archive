@@ -17,6 +17,7 @@ import { CommunityNotice } from './community-shell';
 import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 import { PersonMaterials, PersonNotes } from './person-records-admin';
 import { StoryEditor } from './story-admin';
+import { PersonContributions } from './contributions-admin';
 
 type Fields = {
   name: string;
@@ -85,6 +86,7 @@ const errorText = (failure: unknown, fallback: string) =>
 export function PeopleAdmin({
   archive,
   initialPersonId,
+  initialEntryId,
   onPersonChange,
   onOpenPlace,
   onSaved,
@@ -93,6 +95,7 @@ export function PeopleAdmin({
 }: {
   archive: ArchiveData;
   initialPersonId: string | null;
+  initialEntryId?: string | null;
   onPersonChange: (personId: string | null) => void;
   onOpenPlace: (placeId: string) => void;
   onSaved: (edits: StaffEdit[]) => void;
@@ -184,6 +187,7 @@ export function PeopleAdmin({
             key={selected.id}
             person={selected}
             archive={archive}
+            initialEntryId={initialEntryId}
             onDirtyChange={onDirtyChange}
             onSaved={onSaved}
             onOpenPlace={(placeId) => {
@@ -211,12 +215,14 @@ export function PeopleAdmin({
 function PersonEditor({
   person,
   archive,
+  initialEntryId,
   onDirtyChange,
   onSaved,
   onOpenPlace,
 }: {
   person: Person;
   archive: ArchiveData;
+  initialEntryId?: string | null;
   onDirtyChange: (dirty: boolean) => void;
   onSaved: (edits: StaffEdit[]) => void;
   onOpenPlace: (placeId: string) => void;
@@ -407,11 +413,17 @@ function PersonEditor({
           archive={archive}
           onSaved={(edits, message) => saved(edits, message)}
         />
+        <PersonContributions
+          person={person}
+          archive={archive}
+          initialEntryId={initialEntryId}
+          onSaved={(edits, message) => saved(edits, message)}
+        />
         <ChangeHistory
           history={history.history}
           error={history.error}
           archive={archive}
-          note="Direct corrections to this person, their story, place connections, records and notes. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
+          note="Direct corrections to this person, their story, place connections, records, notes and published contributions. Changes that arrived with a published contribution are on the Contributions tab, and withdrawing one there keeps any later correction."
           onUndone={(edits) =>
             saved(edits, 'Undone. The record is back as it was, apart from later changes.')
           }

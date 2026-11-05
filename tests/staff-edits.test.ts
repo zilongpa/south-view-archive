@@ -9,6 +9,7 @@ import {
   createLink,
   createMaterial,
   editBiography,
+  editContribution,
   editIssue,
   editLink,
   editMaterial,
@@ -527,6 +528,82 @@ test('staff edits and contributions undo independently', async (t) => {
       );
       await undoStaffEdit(result.edits[0]!.id, 'Back', reviewer);
       assert.deepEqual((await lewis()).biography, before.biography);
+    });
+    await t.test('a reviewer corrects a published contribution in place', async () => {
+      const id = await publish('john-lewis', {});
+      let archive = await getArchive();
+      const entry = archive.contributions.find((item) => item.id === id)!;
+      const sourceOf = (data: typeof archive) =>
+        data.sources.find((item) => item.url === `/contributions/${id}`)!;
+      assert.equal(sourceOf(archive).title, entry.title);
+      await assert.rejects(
+        editContribution(id, { patch: { title: 'No' }, reason: 'Short' }, reviewer),
+      );
+      await assert.rejects(
+        editContribution(
+          id,
+          {
+            patch: { photos: [{ id: 'nope', caption: 'c', creator: 'c', rights: 'r' }] },
+            reason: 'Photo',
+          },
+          reviewer,
+        ),
+        { code: 'BAD_REQUEST' },
+      );
+      await assert.rejects(
+        editContribution(id, { patch: { relatedPersonIds: ['nobody'] }, reason: 'Who' }, reviewer),
+        { code: 'NOT_FOUND' },
+      );
+      assert.equal(
+        (await editContribution(id, { patch: { title: entry.title }, reason: 'Same' }, reviewer))
+          .edits.length,
+        0,
+      );
+      const fixed = await editContribution(
+        id,
+        {
+          patch: {
+            title: 'A corrected public title',
+            body: 'A corrected public text for this community contribution, checked by staff.',
+            featured: true,
+            publicNote: 'Spelling corrected.',
+            eventDate: { kind: 'approximate', year: 1965 },
+          },
+          reason: 'Typos',
+        },
+        reviewer,
+      );
+      assert.deepEqual(fixed.edits.map((edit) => edit.targetTable).sort(), [
+        'contributions',
+        'sources',
+      ]);
+      archive = await getArchive();
+      const after = archive.contributions.find((item) => item.id === id)!;
+      assert.equal(after.title, 'A corrected public title');
+      assert.equal(after.featured, true);
+      assert.equal(after.publicNote, 'Spelling corrected.');
+      assert.equal(after.publishedAt, entry.publishedAt);
+      assert.equal(sourceOf(archive).title, 'A corrected public title');
+      const history = await listStaffEdits({ personId: 'john-lewis' }, reviewer);
+      assert.ok(history.some((edit) => edit.targetTable === 'contributions'));
+
+      await undoStaffEdit(fixed.edits[0]!.id, 'Back', reviewer);
+      archive = await getArchive();
+      const undone = archive.contributions.find((item) => item.id === id)!;
+      assert.equal(undone.title, entry.title);
+      assert.equal(undone.publicNote, undefined);
+      assert.equal(sourceOf(archive).title, entry.title);
+
+      // A corrected contribution can still be withdrawn: the entry and its source leave.
+      await editContribution(
+        id,
+        { patch: { context: 'Added context.' }, reason: 'Context' },
+        reviewer,
+      );
+      await withdraw(id);
+      archive = await getArchive();
+      assert.ok(!archive.contributions.some((item) => item.id === id));
+      assert.ok(!archive.sources.some((item) => item.url === `/contributions/${id}`));
     });
     await t.test('full birth and death dates stay in their years', async () => {
       const before = await lewis();

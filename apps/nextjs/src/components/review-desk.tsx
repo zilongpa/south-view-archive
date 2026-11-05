@@ -215,6 +215,7 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
   // The admin has two areas: the contribution queue and direct record corrections.
   const [tab, setTab] = useState<AdminTab>(() => adminTab(params.get('tab')));
   const [adminPerson, setAdminPerson] = useState<string | null>(() => params.get('person'));
+  const [adminEntry, setAdminEntry] = useState<string | null>(null);
   const [adminPlace, setAdminPlace] = useState<string | null>(() => params.get('place'));
   // Server data with every change saved during this visit applied, shared by the record tabs.
   const admin = useAdminArchive(archive);
@@ -481,6 +482,7 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
           key={`people-${nav}`}
           archive={admin.archive}
           initialPersonId={adminPerson}
+          initialEntryId={adminEntry}
           onDirtyChange={onDirtyChange}
           confirmLeave={confirmLeave}
           onSaved={admin.apply}
@@ -557,6 +559,12 @@ export function ReviewDesk({ archive }: { archive: ArchiveData }) {
                       record={selected}
                       archive={archive}
                       onDirtyChange={onDirtyChange}
+                      onEditPublished={(personId, entryId) => {
+                        if (!confirmLeave()) return;
+                        dirty.current = false;
+                        setAdminEntry(entryId);
+                        go('people', personId);
+                      }}
                       vet={vetState(vet, selected.id, startingVet)}
                       canVet={!!vet?.configured && !startingVet && !vet.runningSubmissionId}
                       onVet={() => {
@@ -600,11 +608,13 @@ function ReviewEditor({
   vet,
   canVet,
   onVet,
+  onEditPublished,
 }: {
   record: SubmissionRecord;
   archive: ArchiveData;
   onReviewed: (record: SubmissionRecord) => void;
   onDirtyChange: (value: boolean) => void;
+  onEditPublished: (personId: string, entryId: string) => void;
   vet: VetState;
   canVet: boolean;
   onVet: () => void;
@@ -630,6 +640,9 @@ function ReviewEditor({
     record.status === 'published' ? 'withdraw' : 'publish',
   );
   const readOnly = ['withdrawn', 'rejected', 'draft'].includes(record.status);
+  const publishedEntry = archive.contributions.find(
+    (entry) => entry.id === record.publishedEntryId,
+  );
   const [applyTo, setApplyTo] = useState<ReviewInput['applyTo']>(() => defaultApplyTo(record));
   const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [photoIds, setPhotoIds] = useState(record.photos.map((photo) => photo.id));
@@ -921,8 +934,10 @@ function ReviewEditor({
                   : 'This review is closed'
               }
             >
-              The original and decision history remain available. Changes to published text need a
-              new correction.
+              The original and decision history remain available.{' '}
+              {record.status === 'published'
+                ? 'Correct the published entry in place, or withdraw it below.'
+                : ''}
               {record.publishedEntryId && (
                 <p>
                   <Link
@@ -931,6 +946,17 @@ function ReviewEditor({
                   >
                     View published entry <ArrowRight size={15} />
                   </Link>
+                </p>
+              )}
+              {record.status === 'published' && publishedEntry && (
+                <p>
+                  <button
+                    type="button"
+                    className="community-secondary"
+                    onClick={() => onEditPublished(publishedEntry.personId, publishedEntry.id)}
+                  >
+                    Edit the published entry
+                  </button>
                 </p>
               )}
               {record.status === 'published' && (

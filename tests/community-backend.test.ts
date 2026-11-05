@@ -23,6 +23,7 @@ import {
   getPublicContribution,
   consumeRateLimit,
 } from '../packages/db/src/community';
+import { editContribution } from '../packages/db/src/staff-edits';
 import {
   submissionInputSchema,
   reviewInputSchema,
@@ -636,6 +637,28 @@ test('community lifecycle isolates private originals, verifies ownership, and pu
         assert.equal(after.portrait?.sourceId, `contribution-${submission.id}`);
         assert.ok(after.creditIds.includes(`contributor-${submission.id}`));
         assert.ok(await getPublicPhoto(picture.id));
+        // A staff correction to the photograph's caption and rights reaches the portrait too.
+        await editContribution(
+          submission.id,
+          {
+            patch: {
+              photos: [
+                {
+                  id: picture.id,
+                  caption: 'Outside Ebenezer, about 1962',
+                  creator: picture.creator,
+                  rights: 'CC BY 4.0',
+                },
+              ],
+            },
+            reason: 'Caption checked with the family',
+          },
+          reviewer,
+        );
+        const corrected = (await getArchive()).people.find((p) => p.id === 'john-lewis')!;
+        assert.equal(corrected.portrait?.alt, 'Outside Ebenezer, about 1962');
+        assert.equal(corrected.portrait?.rights, 'CC BY 4.0');
+        // Withdrawal still takes the portrait away with the contribution.
         await reviewSubmission(submission.id, decision({ action: 'withdraw' }), reviewer);
         assert.deepEqual(
           (await getArchive()).people.find((person) => person.id === 'john-lewis'),
