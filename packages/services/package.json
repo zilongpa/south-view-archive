@@ -14,7 +14,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "grant-reviewer": "tsx script/grant-reviewer.ts",
-    "check-storage": "tsx script/check-storage.ts"
+    "check-storage": "tsx script/check-storage.ts",
+    "list-blob": "tsx script/list-blob.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",
