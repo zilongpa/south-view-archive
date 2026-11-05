@@ -1,6 +1,6 @@
 # Cloudflare R2 and S3-compatible photo storage
 
-The application uses the standard AWS SDK v3 S3 interface. The deployed configuration uses the **private Cloudflare R2 bucket `south-view-archive`**, with Supabase PostgreSQL for the database. Local development can still use a local photo directory by default.
+The application uses the standard AWS SDK v3 S3 interface. The site used the **private Cloudflare R2 bucket `south-view-archive`** until 5 November 2026; it now uses a private Vercel Blob store ([VERCEL-BLOB-STORAGE.md](./VERCEL-BLOB-STORAGE.md)). This R2 setup still works with `PHOTO_STORAGE=s3`. Local development can still use a local photo directory by default.
 
 ## Uploads and public access
 

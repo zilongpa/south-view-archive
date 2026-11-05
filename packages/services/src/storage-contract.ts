@@ -11,6 +11,11 @@ export interface PrivateStorage {
     contentType: ImageContentType,
   ): Promise<{ url: string; headers: Record<string, string> }>;
   signDownload?(key: string): Promise<string>;
+  /**
+   * Removes `staging/` uploads older than `olderThanMs` that were never completed, for stores
+   * without their own expiry rules. Returns how many were removed.
+   */
+  removeStaleStaging?(olderThanMs: number): Promise<number>;
 }
 
 export function validateStorageKey(key: string) {

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
+import { after } from 'next/server';
 import { z, ZodError } from 'zod';
 import { dataMode } from '@southview/db/connection';
 import * as repository from '@southview/db/community';
 import * as staffEdits from '@southview/db/staff-edits';
 import { getSession, getSignInMethods, isReviewer } from '@southview/services/auth';
 import { savePhoto, InvalidPhotoError } from '@southview/services/photos';
-import { getStorage, MAX_PHOTO_BYTES } from '@southview/services/storage';
+import { getStorage, MAX_PHOTO_BYTES, type PrivateStorage } from '@southview/services/storage';
 import { createUploadTicket, verifyUploadTicket } from '@southview/services/upload-ticket';
 import { getVetOverview, runVet } from '@southview/services/vet';
 import {
@@ -135,6 +136,16 @@ async function limit(request: Request, bucket: string, max: number) {
   const key = createHash('sha256').update(`${bucket}:${address}`).digest('hex');
   if (!(await repository.consumeRateLimit(key, max, 60 * 60 * 1000)))
     throw new HttpError(429, 'Please wait before trying again. Your saved contribution is safe.');
+}
+let lastStagingSweep = 0;
+/**
+ * Stores without expiry rules (Vercel Blob) keep interrupted uploads; at most hourly, after the
+ * response, remove staging files more than a day old. Failures are ignored and retried later.
+ */
+function sweepStaging(storage: PrivateStorage) {
+  if (!storage.removeStaleStaging || Date.now() - lastStagingSweep < 60 * 60 * 1000) return;
+  lastStagingSweep = Date.now();
+  after(() => storage.removeStaleStaging!(24 * 60 * 60 * 1000).catch(() => undefined));
 }
 function receiptURL(request: Request, id: string, token?: string) {
   const origin =
@@ -416,11 +427,9 @@ async function handle(request: Request, context: Context): Promise<Response> {
               contentType: input.contentType,
               metadata: input.metadata,
             });
-            return json({
-              mode: 'direct',
-              ticket: token,
-              ...(await storage.signUpload(ticket.key, ticket.size, ticket.contentType)),
-            });
+            const signed = await storage.signUpload(ticket.key, ticket.size, ticket.contentType);
+            sweepStaging(storage);
+            return json({ mode: 'direct', ticket: token, ...signed });
           }
           let ticket;
           try {
