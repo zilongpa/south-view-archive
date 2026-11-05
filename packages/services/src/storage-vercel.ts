@@ -3,6 +3,7 @@ import {
   del,
   get,
   issueSignedToken,
+  list,
   parseStoreIdFromDelegationToken,
   presignUrl,
   put,
@@ -30,10 +31,11 @@ export type VercelBlobClient = {
   put: typeof put;
   get: typeof get;
   del: typeof del;
+  list: typeof list;
   issueSignedToken: typeof issueSignedToken;
   presignUrl: typeof presignUrl;
 };
-const sdk: VercelBlobClient = { put, get, del, issueSignedToken, presignUrl };
+const sdk: VercelBlobClient = { put, get, del, list, issueSignedToken, presignUrl };
 
 /**
  * A private Vercel Blob store connected to the project. On Vercel the SDK authenticates with the
@@ -172,6 +174,20 @@ export function createVercelBlobStorage(
       if (result.statusCode !== 200 || !result.stream) throw new Error(unavailable);
       if (result.blob.size > MAX_PHOTO_BYTES) throw new Error('Invalid private photo.');
       return { bytes: await boundedStream(result.stream), contentType: contentTypeFor(key) };
+    },
+    async removeStaleStaging(olderThanMs) {
+      // Blob has no expiry rules: interrupted uploads are swept here instead.
+      const cutoff = Date.now() - olderThanMs;
+      const stale: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await client.list({ ...auth, prefix: 'staging/', cursor, limit: 1000 });
+        for (const blob of page.blobs)
+          if (new Date(blob.uploadedAt).getTime() < cutoff) stale.push(blob.pathname);
+        cursor = page.hasMore ? page.cursor : undefined;
+      } while (cursor);
+      if (stale.length) await client.del(stale, auth);
+      return stale.length;
     },
     async delete(key) {
       validateStorageKey(key);

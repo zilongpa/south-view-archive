@@ -14,6 +14,7 @@ const environment = { BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_store123_secret' };
 
 function fakeClient() {
   const objects = new Map<string, Buffer>();
+  const uploadedAt = new Map<string, Date>();
   const calls: { name: string; args: unknown[] }[] = [];
   const delegation = `${Buffer.from(JSON.stringify({ storeId: 'store_store123' })).toString('base64url')}.sig`;
   const client = {
@@ -34,9 +35,22 @@ function fakeClient() {
         blob: { size: bytes.byteLength, contentType: 'image/jpeg' },
       };
     },
-    async del(pathname: string, options: Record<string, unknown>) {
+    async del(pathname: string | string[], options: Record<string, unknown>) {
       calls.push({ name: 'del', args: [pathname, options] });
+      if (Array.isArray(pathname)) {
+        for (const name of pathname) objects.delete(name);
+        return;
+      }
       if (!objects.delete(pathname)) throw new BlobNotFoundError();
+    },
+    async list(options: { prefix?: string }) {
+      calls.push({ name: 'list', args: [options] });
+      return {
+        blobs: [...objects.keys()]
+          .filter((name) => name.startsWith(options.prefix ?? ''))
+          .map((pathname) => ({ pathname, uploadedAt: uploadedAt.get(pathname) ?? new Date() })),
+        hasMore: false,
+      };
     },
     async issueSignedToken(options: Record<string, unknown>) {
       calls.push({ name: 'issueSignedToken', args: [options] });
@@ -51,7 +65,7 @@ function fakeClient() {
       return { presignedUrl: `https://vercel.com/api/blob/?pathname=${options.pathname}&sig=x` };
     },
   } as unknown as VercelBlobClient;
-  return { client, objects, calls };
+  return { client, objects, calls, uploadedAt };
 }
 
 test('Vercel Blob storage needs a connected private store', () => {
@@ -127,4 +141,16 @@ test('Vercel Blob uploads and downloads use short, single-object signed links', 
   assert.deepEqual(getToken.operations, ['get']);
   assert.ok((getToken.validUntil as number) <= Date.now() + 60_000);
   await assert.rejects(storage.signDownload!(key), /Invalid original photo/);
+});
+
+test('interrupted uploads left in staging are swept after a day', async () => {
+  const { client, objects, uploadedAt } = fakeClient();
+  const storage = createVercelBlobStorage(environment, client);
+  const old = 'staging/11111111-1111-4111-8111-111111111111.jpg';
+  const fresh = 'staging/22222222-2222-4222-8222-222222222222.jpg';
+  for (const name of [old, fresh, original]) objects.set(name, Buffer.from('x'));
+  uploadedAt.set(old, new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+  uploadedAt.set(original, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  assert.equal(await storage.removeStaleStaging!(24 * 60 * 60 * 1000), 1);
+  assert.deepEqual([...objects.keys()].sort(), [fresh, original].sort());
 });
