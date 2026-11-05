@@ -1,26 +1,18 @@
-import type { Metadata } from 'next';
-import { getArchive } from '@southview/db';
-import { Suspense } from 'react';
-import { SiteNavigation } from '@/components/site-navigation';
-import { ReviewDesk } from '@/components/review-desk';
-import '@/components/community.css';
-import '@/components/review-desk.css';
+import { redirect } from 'next/navigation';
+import { adminRecordUrl } from '@/lib/review-state';
+import { AdminView, adminMetadata } from '../admin-view';
+
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = {
-  title: 'Archive admin',
-  robots: { index: false, follow: false },
-  referrer: 'no-referrer',
-};
-export default async function ContributionReviewPage() {
-  const archive = await getArchive();
-  return (
-    <div className="review-page">
-      <SiteNavigation workspace />
-      <main id="main-content" className="review-main">
-        <Suspense fallback={<p className="review-access">Opening the archive admin…</p>}>
-          <ReviewDesk archive={archive} />
-        </Suspense>
-      </main>
-    </div>
-  );
+export const metadata = adminMetadata('Archive admin');
+
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
+const one = (value: string | string[] | undefined) => (typeof value === 'string' ? value : null);
+
+export default async function ContributionReviewPage({ searchParams }: Props) {
+  // Links from before People and Places had their own addresses.
+  const search = await searchParams;
+  const tab = one(search.tab);
+  if (tab === 'people') redirect(adminRecordUrl('people', one(search.person)));
+  if (tab === 'places') redirect(adminRecordUrl('places', one(search.place)));
+  return <AdminView tab="contributions" />;
 }

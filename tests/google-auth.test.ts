@@ -123,6 +123,9 @@ test('safe login destinations retain person context and never carry a receipt or
     '/contribute?person=john-lewis',
   );
   assert.equal(safeCommunityNext('/submissions/abc-123#receipt=private'), '/submissions/abc-123');
+  assert.equal(safeCommunityNext('/admin/people/john-lewis'), '/admin/people/john-lewis');
+  assert.equal(safeCommunityNext('/admin/places'), '/admin/places');
+  assert.equal(safeCommunityNext('/admin/people/a/b'), '/my-contributions');
   for (const value of [
     'https://evil.example',
     '//evil.example',
