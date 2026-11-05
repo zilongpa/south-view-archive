@@ -52,6 +52,13 @@ export const fieldLabels: Record<string, string> = {
   field: 'Concerns',
   note: 'Note',
   sourceIds: 'Sources',
+  body: 'Public text',
+  context: 'Context',
+  sourceCreator: 'Created by',
+  holdingInstitution: 'Held by',
+  featured: 'Featured',
+  publicNote: 'Public note',
+  photos: 'Photographs',
 };
 type Paragraph = { id?: string; text: string; citations: unknown[] };
 /** What one change did to a story, in words: "2 rewritten, 1 added, order changed". */
@@ -97,7 +104,8 @@ function shown(field: string, value: unknown) {
       ? value.join(', ') || '—'
       : `${value.length} item${value.length === 1 ? '' : 's'}`;
   if (typeof value === 'object') return 'changed';
-  return String(value);
+  const text = String(value);
+  return text.length > 160 ? `${text.slice(0, 160)}…` : text;
 }
 
 /** Loads the change history from an admin endpoint and reloads it on demand. */
@@ -135,8 +143,10 @@ function describe(edit: StaffEdit, archive: ArchiveData) {
   if (edit.targetTable === 'materials')
     return `${action} ${data.kind === 'oral-history' ? 'oral history' : 'record'}: ${String(data.title ?? '')}`;
   if (edit.targetTable === 'sources')
-    return `${action} collection link: ${String(data.title ?? edit.targetId)}`;
+    return `${action} ${String(data.url ?? '').startsWith('/contributions/') ? 'contribution source' : 'collection link'}: ${String(data.title ?? edit.targetId)}`;
   if (edit.targetTable === 'issues') return `${action} note on this record`;
+  if (edit.targetTable === 'contributions')
+    return `${action} published contribution: ${String(data.title ?? '')}`;
   return `${action} ${edit.targetTable}`;
 }
 
@@ -223,21 +233,23 @@ export function ChangeHistory({
                   <strong>{describe(edit, archive)}</strong>
                   {edit.previous !== null && edit.next !== null && (
                     <dl>
-                      {edit.changedFields.map((field) => (
-                        <div key={field}>
-                          <dt>{fieldLabels[field] ?? field}</dt>
-                          {field === 'biography' ? (
-                            <dd>{storyChange(edit.previous?.[field], edit.next?.[field])}</dd>
-                          ) : (
-                            <dd>
-                              <span>{shown(field, edit.previous?.[field])}</span>
-                              <span aria-hidden="true"> → </span>
-                              <span className="sr-only"> changed to </span>
-                              <span>{shown(field, edit.next?.[field])}</span>
-                            </dd>
-                          )}
-                        </div>
-                      ))}
+                      {edit.changedFields
+                        .filter((field) => field !== 'updatedAt')
+                        .map((field) => (
+                          <div key={field}>
+                            <dt>{fieldLabels[field] ?? field}</dt>
+                            {field === 'biography' ? (
+                              <dd>{storyChange(edit.previous?.[field], edit.next?.[field])}</dd>
+                            ) : (
+                              <dd>
+                                <span>{shown(field, edit.previous?.[field])}</span>
+                                <span aria-hidden="true"> → </span>
+                                <span className="sr-only"> changed to </span>
+                                <span>{shown(field, edit.next?.[field])}</span>
+                              </dd>
+                            )}
+                          </div>
+                        ))}
                     </dl>
                   )}
                 </div>

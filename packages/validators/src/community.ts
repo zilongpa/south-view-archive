@@ -371,6 +371,45 @@ export const staffBiographySchema = z.object({
   reason: staffReasonSchema,
 });
 export type StaffBiography = z.infer<typeof staffBiographySchema>;
+/** Corrections to a published contribution's public entry. Omitted fields stay as published. */
+export const staffContributionEditSchema = z.object({
+  patch: z.object({
+    title: z
+      .string()
+      .trim()
+      .min(3, 'Give the public title at least 3 characters.')
+      .max(160)
+      .optional(),
+    body: z
+      .string()
+      .trim()
+      .min(20, 'Keep at least 20 characters of public text.')
+      .max(20000)
+      .optional(),
+    context: z.string().trim().max(4000).optional(),
+    sourceCreator: z.string().trim().max(200).optional(),
+    narrator: z.string().trim().max(200).optional(),
+    holdingInstitution: z.string().trim().max(200).optional(),
+    eventDate: eventDateSchema.optional(),
+    featured: z.boolean().optional(),
+    publicNote: z.string().trim().max(3000).optional(),
+    relatedPersonIds: linkedRecordIdsSchema.optional(),
+    placeIds: linkedRecordIdsSchema.optional(),
+    photos: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(200),
+          caption: z.string().trim().min(1, 'Give each photograph a caption.').max(500),
+          creator: z.string().trim().min(1, 'Name the creator of each photograph.').max(160),
+          rights: z.string().trim().min(1, 'State the rights for each photograph.').max(1000),
+        }),
+      )
+      .max(10)
+      .optional(),
+  }),
+  reason: staffReasonSchema,
+});
+export type StaffContributionEdit = z.infer<typeof staffContributionEditSchema>;
 /** Where a record or oral history is held: a link to the collection, never an uploaded file. */
 export const staffSourceLinkSchema = z.object({
   /** Blank uses the record's own title. */

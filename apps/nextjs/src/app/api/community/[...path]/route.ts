@@ -13,6 +13,7 @@ import {
   photoMetadataSchema,
   reviewInputSchema,
   staffBiographySchema,
+  staffContributionEditSchema,
   staffIssueCreateSchema,
   staffIssueSchema,
   staffLinkCreateSchema,
@@ -303,6 +304,14 @@ async function handle(request: Request, context: Context): Promise<Response> {
         const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
         return json(await staffEdits.removeIssue(id, reason, actor));
       }
+      if (area === 'contributions' && id && !action && method === 'POST')
+        return json(
+          await staffEdits.editContribution(
+            id,
+            staffContributionEditSchema.parse(await bodyJSON(request)),
+            actor,
+          ),
+        );
       if (area === 'edits' && id && action === 'undo' && method === 'POST') {
         const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
         return json(await staffEdits.undoStaffEdit(id, reason, actor));

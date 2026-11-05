@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   ArchiveData,
+  ContributionEntry,
   Material,
   Person,
   PersonPlace,
@@ -53,6 +54,7 @@ export function useAdminArchive(archive: ArchiveData) {
       materials: merge<Material>(archive.materials, 'materials', overrides),
       sources: merge<Source>(archive.sources, 'sources', overrides),
       issues: merge<Issue>(archive.issues, 'issues', overrides),
+      contributions: merge<ContributionEntry>(archive.contributions, 'contributions', overrides),
     }),
     [archive, overrides],
   );

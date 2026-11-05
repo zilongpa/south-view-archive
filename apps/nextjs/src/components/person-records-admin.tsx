@@ -91,7 +91,7 @@ function ReasonField({ value, onChange }: { value: string; onChange: (value: str
   );
 }
 
-function Checklist<T extends { id: string }>({
+export function Checklist<T extends { id: string }>({
   legend,
   items,
   selected,
