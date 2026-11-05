@@ -18,6 +18,7 @@ import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 import { PersonMaterials, PersonNotes } from './person-records-admin';
 import { StoryEditor } from './story-admin';
 import { PersonContributions } from './contributions-admin';
+import { DeleteRecord, RecentlyDeleted } from './admin-delete';
 
 type Fields = {
   name: string;
@@ -110,6 +111,8 @@ export function PeopleAdmin({
       : null,
   );
   const [mobileDetail, setMobileDetail] = useState(!!selectedId);
+  const [deletedNotice, setDeletedNotice] = useState('');
+  const [deletedVersion, setDeletedVersion] = useState(0);
   const visible = people.filter((person) =>
     `${person.name} ${person.aliases.join(' ')}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
@@ -174,6 +177,17 @@ export function PeopleAdmin({
             </div>
           )}
         </div>
+        <RecentlyDeleted
+          kind="person"
+          version={deletedVersion}
+          onRestored={(edits, personId) => {
+            onSaved(edits);
+            setDeletedNotice('');
+            setSelectedId(personId);
+            setMobileDetail(true);
+            onPersonChange(personId);
+          }}
+        />
       </aside>
       <div className="review-detail-scroll">
         <button
@@ -190,6 +204,15 @@ export function PeopleAdmin({
             initialEntryId={initialEntryId}
             onDirtyChange={onDirtyChange}
             onSaved={onSaved}
+            onDeleted={(edits) => {
+              onDirtyChange(false);
+              onSaved(edits);
+              setSelectedId(null);
+              setMobileDetail(false);
+              onPersonChange(null);
+              setDeletedNotice(`Deleted ${displayPersonName(selected.name)}.`);
+              setDeletedVersion((value) => value + 1);
+            }}
             onOpenPlace={(placeId) => {
               if (confirmLeave()) {
                 onDirtyChange(false);
@@ -200,6 +223,7 @@ export function PeopleAdmin({
         ) : (
           <div className="review-empty admin-empty">
             <Users size={28} aria-hidden="true" />
+            {deletedNotice && <CommunityNotice kind="success">{deletedNotice}</CommunityNotice>}
             <h3>Choose a person</h3>
             <p>
               Correct names, other names, years, themes, the summary, place connections, records,
@@ -216,6 +240,7 @@ function PersonEditor({
   person,
   archive,
   initialEntryId,
+  onDeleted,
   onDirtyChange,
   onSaved,
   onOpenPlace,
@@ -223,6 +248,7 @@ function PersonEditor({
   person: Person;
   archive: ArchiveData;
   initialEntryId?: string | null;
+  onDeleted: (edits: StaffEdit[]) => void;
   onDirtyChange: (dirty: boolean) => void;
   onSaved: (edits: StaffEdit[]) => void;
   onOpenPlace: (placeId: string) => void;
@@ -427,6 +453,12 @@ function PersonEditor({
           onUndone={(edits) =>
             saved(edits, 'Undone. The record is back as it was, apart from later changes.')
           }
+        />
+        <DeleteRecord
+          kind="person"
+          id={person.id}
+          name={displayPersonName(person.name)}
+          onDeleted={onDeleted}
         />
       </div>
     </section>

@@ -312,6 +312,35 @@ async function handle(request: Request, context: Context): Promise<Response> {
             actor,
           ),
         );
+      if (
+        (area === 'persons' || area === 'places') &&
+        id &&
+        action === 'deletion' &&
+        method === 'GET'
+      )
+        return json(
+          await staffEdits.deletionImpact(area === 'persons' ? 'person' : 'place', id, actor),
+        );
+      if (
+        (area === 'persons' || area === 'places') &&
+        id &&
+        action === 'delete' &&
+        method === 'POST'
+      ) {
+        const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
+        return json(
+          await staffEdits.deleteRecord(area === 'persons' ? 'person' : 'place', id, reason, actor),
+        );
+      }
+      if (
+        area === 'deleted' &&
+        (id === 'persons' || id === 'places') &&
+        !action &&
+        method === 'GET'
+      )
+        return json({
+          edits: await staffEdits.listDeleted(id === 'persons' ? 'person' : 'place', actor),
+        });
       if (area === 'edits' && id && action === 'undo' && method === 'POST') {
         const { reason } = staffRemoveSchema.parse(await bodyJSON(request));
         return json(await staffEdits.undoStaffEdit(id, reason, actor));

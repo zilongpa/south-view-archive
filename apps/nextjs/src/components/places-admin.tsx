@@ -6,6 +6,7 @@ import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { precisionLabels } from '@/lib/place-mode';
 import { CommunityNotice } from './community-shell';
+import { DeleteRecord, RecentlyDeleted } from './admin-delete';
 import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 import { LocationPicker } from './location-picker';
 
@@ -65,6 +66,8 @@ export function PlacesAdmin({
     initialPlaceId && places.some((place) => place.id === initialPlaceId) ? initialPlaceId : null,
   );
   const [mobileDetail, setMobileDetail] = useState(!!selectedId);
+  const [deletedNotice, setDeletedNotice] = useState('');
+  const [deletedVersion, setDeletedVersion] = useState(0);
   const visible = places.filter((place) =>
     `${place.name} ${place.address ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
@@ -133,6 +136,17 @@ export function PlacesAdmin({
             </div>
           )}
         </div>
+        <RecentlyDeleted
+          kind="place"
+          version={deletedVersion}
+          onRestored={(edits, placeId) => {
+            onSaved(edits);
+            setDeletedNotice('');
+            setSelectedId(placeId);
+            setMobileDetail(true);
+            onPlaceChange(placeId);
+          }}
+        />
       </aside>
       <div className="review-detail-scroll">
         <button
@@ -148,6 +162,15 @@ export function PlacesAdmin({
             archive={archive}
             onDirtyChange={onDirtyChange}
             onSaved={onSaved}
+            onDeleted={(edits) => {
+              onDirtyChange(false);
+              onSaved(edits);
+              setSelectedId(null);
+              setMobileDetail(false);
+              onPlaceChange(null);
+              setDeletedNotice(`Deleted ${selected.name}.`);
+              setDeletedVersion((value) => value + 1);
+            }}
             onOpenPerson={(personId) => {
               if (confirmLeave()) {
                 onDirtyChange(false);
@@ -158,6 +181,7 @@ export function PlacesAdmin({
         ) : (
           <div className="review-empty admin-empty">
             <MapPin size={28} aria-hidden="true" />
+            {deletedNotice && <CommunityNotice kind="success">{deletedNotice}</CommunityNotice>}
             <h3>Choose a place</h3>
             <p>Correct a place’s name, map position, precision, location note or description.</p>
           </div>
@@ -172,12 +196,14 @@ function PlaceEditor({
   archive,
   onDirtyChange,
   onSaved,
+  onDeleted,
   onOpenPerson,
 }: {
   place: Place;
   archive: ArchiveData;
   onDirtyChange: (dirty: boolean) => void;
   onSaved: (edits: StaffEdit[]) => void;
+  onDeleted: (edits: StaffEdit[]) => void;
   onOpenPerson: (personId: string) => void;
 }) {
   const [savedFields, setSavedFields] = useState(() => fieldsFor(place));
@@ -414,6 +440,7 @@ function PlaceEditor({
             saved(edits, 'Undone. The place is back as it was, apart from later changes.')
           }
         />
+        <DeleteRecord kind="place" id={place.id} name={place.name} onDeleted={onDeleted} />
       </div>
     </section>
   );
