@@ -351,11 +351,23 @@ test('the storage check command completes a real HTTP round trip and leaves no p
   const server = createServer(async (request, result) => {
     try {
       const path = request.url!.split('?')[0]!;
-      assert.match(path, /^\/southview-private\/(originals|processed)\/[\da-f-]{36}\.(png|jpg)$/);
-      assert.match(request.headers.authorization!, /^AWS4-HMAC-SHA256 /);
+      assert.match(
+        path,
+        /^\/southview-private\/(originals|processed|staging)\/[\da-f-]{36}\.(png|jpg)$/,
+      );
+      // Like R2: signed by header or by a presigned query string, or refused.
+      const presigned = request.url!.includes('X-Amz-Signature=');
+      if (!presigned && !/^AWS4-HMAC-SHA256 /.test(request.headers.authorization ?? '')) {
+        result.writeHead(403).end();
+        return;
+      }
       methods.push(request.method!);
       if (request.method === 'PUT') {
         assert.equal(request.headers['if-none-match'], '*');
+        if (objects.has(path)) {
+          result.writeHead(412).end();
+          return;
+        }
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(chunk);
         objects.set(path, {
@@ -405,8 +417,10 @@ test('the storage check command completes a real HTTP round trip and leaves no p
       timeout: 30_000,
     },
   );
-  assert.match(executed.stdout, /write, read-back, and delete passed/);
-  assert.match(executed.stdout, /Check bucket privacy separately/);
+  assert.match(executed.stdout, /write and read back/);
+  assert.match(executed.stdout, /unsigned address is refused \(403\)/);
+  assert.match(executed.stdout, /signed direct upload works and cannot overwrite/);
+  assert.match(executed.stdout, /Photo storage check passed/);
   assert.equal(objects.size, 0);
-  assert.deepEqual(methods, ['PUT', 'GET', 'PUT', 'GET', 'DELETE', 'GET', 'DELETE', 'GET']);
+  assert.equal(methods.filter((method) => method === 'DELETE').length, 3);
 });

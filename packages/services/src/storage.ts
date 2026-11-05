@@ -2,6 +2,7 @@ import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { assertServer, privateDataDirectory, type Environment } from './config';
 import { createS3Storage, s3Configuration, type S3Storage } from './storage-s3';
+import { createVercelBlobStorage } from './storage-vercel';
 import {
   contentTypeFor,
   MAX_PHOTO_BYTES,
@@ -12,6 +13,7 @@ import {
 
 export * from './storage-contract';
 export { createS3Storage, s3Configuration } from './storage-s3';
+export { createVercelBlobStorage, vercelBlobConfiguration } from './storage-vercel';
 
 export function createLocalStorage(directory: string): PrivateStorage {
   assertServer();
@@ -162,7 +164,9 @@ export function getStorage(environment: Environment = process.env): PrivateStora
     return cachedS3.storage;
   }
   if (driver === 'supabase') return createSupabaseStorage(environment);
-  if (driver !== 'local') throw new Error('PHOTO_STORAGE must be local, s3, or supabase.');
+  if (driver === 'vercel-blob') return createVercelBlobStorage(environment);
+  if (driver !== 'local')
+    throw new Error('PHOTO_STORAGE must be local, s3, vercel-blob, or supabase.');
   if (environment.NODE_ENV === 'production' && environment.ARCHIVE_DATA_MODE === 'database')
     throw new Error('Production database mode requires private object storage.');
   return createLocalStorage(join(privateDataDirectory(environment), 'photos'));
