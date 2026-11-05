@@ -1,5 +1,5 @@
 'use client';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent } from 'react';
 import { BookOpen, FileWarning, Headphones, LoaderCircle, Plus } from 'lucide-react';
 import type {
   ArchiveData,
@@ -9,31 +9,21 @@ import type {
   Source,
   StaffEdit,
 } from '@southview/validators';
-import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
+import {
+  Checklist,
+  ReasonField,
+  hasReason,
+  personSourceIds,
+  savedMessage,
+  useStaffRequest,
+} from './admin-shared';
+import { EventDateFields, eventDateProblem } from './event-date-fields';
 
 type Issue = ArchiveData['issues'][number];
 type Saved = (edits: StaffEdit[], message: string) => void;
-const errorText = (failure: unknown, fallback: string) =>
-  failure instanceof Error ? failure.message : fallback;
 const byTitle = (a: Source, b: Source) => a.title.localeCompare(b.title);
-
-/** Sources this person's page already cites, offered first when choosing one. */
-export function personSourceIds(person: Person, archive: ArchiveData) {
-  return new Set([
-    ...person.summaryCitations.map((item) => item.sourceId),
-    ...person.biography.flatMap((block) => block.citations.map((item) => item.sourceId)),
-    ...archive.relations
-      .filter((item) => item.personId === person.id)
-      .flatMap((item) => item.citations.map((citation) => citation.sourceId)),
-    ...archive.materials.filter((item) => item.personId === person.id).map((item) => item.sourceId),
-    ...archive.issues
-      .filter((item) => item.personId === person.id)
-      .flatMap((item) => item.sourceIds),
-    ...(person.portrait ? [person.portrait.sourceId] : []),
-  ]);
-}
 
 /** How many records cite a source, so staff know a correction to its link applies to them all. */
 function sourceUses(sourceId: string, archive: ArchiveData) {
@@ -56,78 +46,6 @@ function sourceUses(sourceId: string, archive: ArchiveData) {
     archive.materials.filter((item) => item.sourceId === sourceId).length +
     archive.issues.filter((item) => item.sourceIds.includes(sourceId)).length +
     archive.contributions.filter((item) => item.sourceIds.includes(sourceId)).length
-  );
-}
-
-/** Posts one staff change with its reason, and reports the saved rows. */
-function useStaffSend(onSaved: Saved) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  async function send(path: string, body: Record<string, unknown>, message: string) {
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(path, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-      onSaved(result.edits, result.edits.length ? message : 'Nothing changed.');
-    } catch (failure) {
-      setError(errorText(failure, 'The change could not be saved.'));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return { busy, error, setError, send };
-}
-
-function ReasonField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="community-field">
-      <span>Reason *</span>
-      <input value={value} maxLength={1000} onChange={(event) => onChange(event.target.value)} />
-      <small>Shown to other staff in the change history. Not shown publicly.</small>
-    </label>
-  );
-}
-
-export function Checklist<T extends { id: string }>({
-  legend,
-  items,
-  selected,
-  label,
-  onChange,
-}: {
-  legend: string;
-  items: T[];
-  selected: string[];
-  label: (item: T) => ReactNode;
-  onChange: (ids: string[]) => void;
-}) {
-  return (
-    <details className="admin-checklist" open={selected.length > 0}>
-      <summary className="community-text-button">
-        {legend} ({selected.length})
-      </summary>
-      <div className="community-fields">
-        {items.map((item) => (
-          <label className="community-check" key={item.id}>
-            <input
-              type="checkbox"
-              checked={selected.includes(item.id)}
-              onChange={(event) =>
-                onChange(
-                  event.target.checked
-                    ? [...selected, item.id]
-                    : selected.filter((id) => id !== item.id),
-                )
-              }
-            />
-            <span>{label(item)}</span>
-          </label>
-        ))}
-      </div>
-    </details>
   );
 }
 
@@ -255,8 +173,6 @@ const trimLink = (link: LinkFields): LinkFields => ({
 const sameLink = (a: LinkFields, b: LinkFields) =>
   JSON.stringify(trimLink(a)) === JSON.stringify(trimLink(b));
 
-type DateKind = EventDate['kind'];
-
 function MaterialForm({
   person,
   archive,
@@ -280,16 +196,7 @@ function MaterialForm({
   const [narrator, setNarrator] = useState(material?.narrator ?? '');
   const [interviewer, setInterviewer] = useState(material?.interviewer ?? '');
   const [date, setDate] = useState(material?.date ?? '');
-  const event = material?.eventDate ?? { kind: 'unknown' as const };
-  const [dateKind, setDateKind] = useState<DateKind>(event.kind);
-  const [year, setYear] = useState(
-    event.kind === 'year' || event.kind === 'approximate'
-      ? String(event.year)
-      : event.kind === 'range'
-        ? String(event.startYear)
-        : '',
-  );
-  const [endYear, setEndYear] = useState(event.kind === 'range' ? String(event.endYear) : '');
+  const [eventDate, setEventDate] = useState<EventDate>(material?.eventDate ?? { kind: 'unknown' });
   const [placeIds, setPlaceIds] = useState(material?.placeIds ?? []);
   const [relatedPersonIds, setRelatedPersonIds] = useState(material?.relatedPersonIds ?? []);
   const [mode, setMode] = useState<'new' | 'existing'>(material ? 'existing' : 'new');
@@ -297,7 +204,7 @@ function MaterialForm({
   const chosen = archive.sources.find((source) => source.id === sourceId);
   const [link, setLink] = useState<LinkFields>(material ? linkFor(chosen) : emptyLink);
   const [reason, setReason] = useState('');
-  const { busy, error, setError, send } = useStaffSend(onSaved);
+  const { busy, error, setError, send } = useStaffRequest();
   const linkedPlaceIds = new Set(
     archive.relations.filter((item) => item.personId === person.id).map((item) => item.placeId),
   );
@@ -321,28 +228,15 @@ function MaterialForm({
   function setLinkField(field: keyof LinkFields, value: string) {
     setLink((current) => ({ ...current, [field]: value }));
   }
-  function eventDate(): EventDate | string {
-    if (dateKind === 'unknown') return { kind: 'unknown' };
-    const start = Number(year.trim());
-    if (!/^\d{4}$/.test(year.trim())) return 'Enter the year with four digits.';
-    if (dateKind !== 'range') return { kind: dateKind, year: start };
-    if (!/^\d{4}$/.test(endYear.trim())) return 'Enter the end year with four digits.';
-    return { kind: 'range', startYear: start, endYear: Number(endYear.trim()) };
-  }
-
   async function save(formEvent: FormEvent) {
     formEvent.preventDefault();
-    const when = eventDate();
-    if (typeof when === 'string') {
-      setError(when);
+    const problem = eventDateProblem(eventDate);
+    if (problem) {
+      setError(problem);
       return;
     }
     if (mode === 'existing' && !sourceId) {
       setError('Choose the source, or paste a new link.');
-      return;
-    }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are making this change.');
       return;
     }
     const source =
@@ -355,7 +249,7 @@ function MaterialForm({
               ? { link: trimLink(link) }
               : {}),
           };
-    await send(
+    const edits = await send(
       material ? `/admin/materials/${encodeURIComponent(material.id)}` : '/admin/materials',
       {
         ...(material ? {} : { personId: person.id }),
@@ -366,15 +260,22 @@ function MaterialForm({
           narrator: narrator.trim(),
           interviewer: interviewer.trim(),
           date: date.trim(),
-          eventDate: when,
+          eventDate,
           placeIds,
           relatedPersonIds,
         },
         source,
-        reason: reason.trim(),
       },
-      material ? 'Saved the record.' : 'Added. It now appears on this person’s page.',
+      reason,
     );
+    if (edits)
+      onSaved(
+        edits,
+        savedMessage(
+          edits,
+          material ? 'Saved the record.' : 'Added. It now appears on this person’s page.',
+        ),
+      );
   }
 
   return (
@@ -437,42 +338,7 @@ function MaterialForm({
       )}
       <fieldset className="admin-fieldset">
         <legend>When the events it describes happened</legend>
-        <div className="community-two-columns">
-          <label className="community-field">
-            <span>Date</span>
-            <select
-              value={dateKind}
-              onChange={(change) => setDateKind(change.target.value as DateKind)}
-            >
-              <option value="unknown">Unknown</option>
-              <option value="year">In a year</option>
-              <option value="approximate">Around a year</option>
-              <option value="range">Between two years</option>
-            </select>
-          </label>
-          {dateKind !== 'unknown' && (
-            <label className="community-field">
-              <span>{dateKind === 'range' ? 'From' : 'Year'}</span>
-              <input
-                inputMode="numeric"
-                maxLength={4}
-                value={year}
-                onChange={(change) => setYear(change.target.value)}
-              />
-            </label>
-          )}
-          {dateKind === 'range' && (
-            <label className="community-field">
-              <span>To</span>
-              <input
-                inputMode="numeric"
-                maxLength={4}
-                value={endYear}
-                onChange={(change) => setEndYear(change.target.value)}
-              />
-            </label>
-          )}
-        </div>
+        <EventDateFields wording="staff" value={eventDate} onChange={setEventDate} />
       </fieldset>
 
       <fieldset className="admin-fieldset">
@@ -630,7 +496,7 @@ function MaterialForm({
             className="community-text-button admin-danger"
             disabled={busy}
             onClick={() => {
-              if (reason.trim().length < 3) {
+              if (!hasReason(reason)) {
                 setError('Say briefly why you are removing this record.');
                 return;
               }
@@ -641,9 +507,9 @@ function MaterialForm({
               )
                 void send(
                   `/admin/materials/${encodeURIComponent(material.id)}/remove`,
-                  { reason: reason.trim() },
-                  'Removed the record.',
-                );
+                  {},
+                  reason,
+                ).then((edits) => edits && onSaved(edits, 'Removed the record.'));
             }}
           >
             Remove record
@@ -759,7 +625,7 @@ function IssueForm({
   const [sourceIds, setSourceIds] = useState(issue?.sourceIds ?? []);
   const [allSources, setAllSources] = useState(false);
   const [reason, setReason] = useState('');
-  const { busy, error, setError, send } = useStaffSend(onSaved);
+  const { busy, error, setError, send } = useStaffRequest();
   const sources = [...archive.sources]
     .filter((source) => allSources || own.has(source.id) || sourceIds.includes(source.id))
     .sort(byTitle);
@@ -770,21 +636,19 @@ function IssueForm({
       setError('Write the note in at least 10 characters.');
       return;
     }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are making this change.');
-      return;
-    }
-    await send(
+    const edits = await send(
       issue?.id ? `/admin/issues/${encodeURIComponent(issue.id)}` : '/admin/issues',
-      {
-        ...(issue ? {} : { personId: person.id }),
-        field,
-        note: note.trim(),
-        sourceIds,
-        reason: reason.trim(),
-      },
-      issue ? 'Saved the note.' : 'Added. The note now appears on this person’s page.',
+      { ...(issue ? {} : { personId: person.id }), field, note: note.trim(), sourceIds },
+      reason,
     );
+    if (edits)
+      onSaved(
+        edits,
+        savedMessage(
+          edits,
+          issue ? 'Saved the note.' : 'Added. The note now appears on this person’s page.',
+        ),
+      );
   }
 
   return (
@@ -844,15 +708,13 @@ function IssueForm({
             className="community-text-button admin-danger"
             disabled={busy}
             onClick={() => {
-              if (reason.trim().length < 3) {
+              if (!hasReason(reason)) {
                 setError('Say briefly why you are removing this note.');
                 return;
               }
               if (window.confirm('Remove this note? You can undo this from the change history.'))
-                void send(
-                  `/admin/issues/${encodeURIComponent(issue.id!)}/remove`,
-                  { reason: reason.trim() },
-                  'Removed the note.',
+                void send(`/admin/issues/${encodeURIComponent(issue.id!)}/remove`, {}, reason).then(
+                  (edits) => edits && onSaved(edits, 'Removed the note.'),
                 );
             }}
           >

@@ -2,11 +2,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, LoaderCircle, MapPin, Search } from 'lucide-react';
 import type { ArchiveData, Place, StaffEdit, StaffPlaceEdit } from '@southview/validators';
-import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { precisionLabels } from '@/lib/place-mode';
 import { CommunityNotice } from './community-shell';
 import { DeleteRecord, RecentlyDeleted } from './admin-delete';
+import { ReasonField, savedMessage, useStaffRequest } from './admin-shared';
 import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 import { LocationPicker } from './location-picker';
 
@@ -209,8 +209,7 @@ function PlaceEditor({
   const [savedFields, setSavedFields] = useState(() => fieldsFor(place));
   const [fields, setFields] = useState(savedFields);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, setError, send } = useStaffRequest();
   const [notice, setNotice] = useState('');
   const history = useStaffHistory(`/admin/places/${encodeURIComponent(place.id)}`);
   const patch = patchFor(fields, savedFields);
@@ -251,27 +250,15 @@ function PlaceEditor({
       setError('A place needs a name and a location note.');
       return;
     }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are making this change. It is shown in the change history.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/places/${encodeURIComponent(place.id)}`,
-        { method: 'POST', body: JSON.stringify({ patch, reason: reason.trim() }) },
-      );
+    const edits = await send(`/admin/places/${encodeURIComponent(place.id)}`, { patch }, reason, {
+      missingReason:
+        'Say briefly why you are making this change. It is shown in the change history.',
+    });
+    if (edits)
       saved(
-        result.edits,
-        result.edits.length
-          ? 'Saved. The map and every connected person’s page show the change.'
-          : 'Nothing changed.',
+        edits,
+        savedMessage(edits, 'Saved. The map and every connected person’s page show the change.'),
       );
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The change could not be saved.');
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
@@ -373,16 +360,12 @@ function PlaceEditor({
                 onChange={(event) => edit('summary', event.target.value)}
               />
             </label>
-            <label className="community-field">
-              <span>Reason for this change *</span>
-              <input
-                value={reason}
-                maxLength={1000}
-                placeholder="For example: position checked on site"
-                onChange={(event) => setReason(event.target.value)}
-              />
-              <small>Shown to other staff in the change history. Not shown publicly.</small>
-            </label>
+            <ReasonField
+              label="Reason for this change *"
+              value={reason}
+              onChange={setReason}
+              placeholder="For example: position checked on site"
+            />
           </div>
           <div className="admin-form-actions">
             <button className="community-primary" disabled={busy || !changed.length}>

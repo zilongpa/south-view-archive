@@ -9,14 +9,13 @@ import type {
   Person,
   StaffEdit,
 } from '@southview/validators';
-import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
-import { Checklist } from './person-records-admin';
+import { Checklist, ReasonField, savedMessage, useStaffRequest } from './admin-shared';
+import { EventDateFields, eventDateProblem } from './event-date-fields';
 
 type Saved = (edits: StaffEdit[], message: string) => void;
 type Photo = ContributionEntry['photos'][number];
-type DateKind = EventDate['kind'];
 
 /** Published contributions about this person, each correctable in place. */
 export function PersonContributions({
@@ -98,12 +97,6 @@ export function PersonContributions({
   );
 }
 
-function startYear(date: EventDate) {
-  if (date.kind === 'year' || date.kind === 'approximate') return String(date.year);
-  if (date.kind === 'range') return String(date.startYear);
-  return '';
-}
-
 function ContributionForm({
   entry,
   person,
@@ -125,17 +118,12 @@ function ContributionForm({
   const [holdingInstitution, setHoldingInstitution] = useState(entry.holdingInstitution);
   const [publicNote, setPublicNote] = useState(entry.publicNote ?? '');
   const [featured, setFeatured] = useState(entry.featured);
-  const [dateKind, setDateKind] = useState<DateKind>(entry.eventDate.kind);
-  const [year, setYear] = useState(startYear(entry.eventDate));
-  const [endYear, setEndYear] = useState(
-    entry.eventDate.kind === 'range' ? String(entry.eventDate.endYear) : '',
-  );
+  const [eventDate, setEventDate] = useState<EventDate>(entry.eventDate);
   const [relatedPersonIds, setRelatedPersonIds] = useState(entry.relatedPersonIds);
   const [placeIds, setPlaceIds] = useState(entry.placeIds);
   const [photos, setPhotos] = useState<Photo[]>(entry.photos);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, setError, send } = useStaffRequest();
   const people = archive.people
     .filter((item) => item.id !== person.id)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -144,13 +132,6 @@ function ContributionForm({
     archive.people.flatMap((item) => (item.portrait ? [item.portrait.url] : [])),
   );
 
-  function eventDate(): EventDate | string {
-    if (dateKind === 'unknown') return { kind: 'unknown' };
-    if (!/^\d{4}$/.test(year.trim())) return 'Enter the year with four digits.';
-    if (dateKind !== 'range') return { kind: dateKind, year: Number(year.trim()) };
-    if (!/^\d{4}$/.test(endYear.trim())) return 'Enter the end year with four digits.';
-    return { kind: 'range', startYear: Number(year.trim()), endYear: Number(endYear.trim()) };
-  }
   function setPhoto(id: string, field: 'caption' | 'creator' | 'rights', value: string) {
     setPhotos((current) =>
       current.map((photo) => (photo.id === id ? { ...photo, [field]: value } : photo)),
@@ -159,9 +140,9 @@ function ContributionForm({
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    const when = eventDate();
-    if (typeof when === 'string') {
-      setError(when);
+    const problem = eventDateProblem(eventDate);
+    if (problem) {
+      setError(problem);
       return;
     }
     const patch: Record<string, unknown> = {};
@@ -180,7 +161,7 @@ function ContributionForm({
       if (value.trim() !== saved) patch[field] = value.trim();
     }
     if (featured !== entry.featured) patch.featured = featured;
-    if (JSON.stringify(when) !== JSON.stringify(entry.eventDate)) patch.eventDate = when;
+    if (JSON.stringify(eventDate) !== JSON.stringify(entry.eventDate)) patch.eventDate = eventDate;
     if (JSON.stringify(relatedPersonIds) !== JSON.stringify(entry.relatedPersonIds))
       patch.relatedPersonIds = relatedPersonIds;
     if (JSON.stringify(placeIds) !== JSON.stringify(entry.placeIds)) patch.placeIds = placeIds;
@@ -202,26 +183,16 @@ function ContributionForm({
       setError('Nothing has changed yet.');
       return;
     }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are correcting this contribution.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/contributions/${encodeURIComponent(entry.id)}`,
-        { method: 'POST', body: JSON.stringify({ patch, reason: reason.trim() }) },
-      );
-      onSaved(
-        result.edits,
-        result.edits.length ? 'Saved the contribution. It is live.' : 'Nothing changed.',
-      );
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The contribution could not be saved.');
-    } finally {
-      setBusy(false);
-    }
+    const edits = await send(
+      `/admin/contributions/${encodeURIComponent(entry.id)}`,
+      { patch },
+      reason,
+      {
+        missingReason: 'Say briefly why you are correcting this contribution.',
+        failure: 'The contribution could not be saved.',
+      },
+    );
+    if (edits) onSaved(edits, savedMessage(edits, 'Saved the contribution. It is live.'));
   }
 
   return (
@@ -284,39 +255,7 @@ function ContributionForm({
       </label>
       <fieldset className="admin-fieldset">
         <legend>When it happened</legend>
-        <div className="community-two-columns">
-          <label className="community-field">
-            <span>Date</span>
-            <select value={dateKind} onChange={(e) => setDateKind(e.target.value as DateKind)}>
-              <option value="unknown">Unknown</option>
-              <option value="year">In a year</option>
-              <option value="approximate">Around a year</option>
-              <option value="range">Between two years</option>
-            </select>
-          </label>
-          {dateKind !== 'unknown' && (
-            <label className="community-field">
-              <span>{dateKind === 'range' ? 'From' : 'Year'}</span>
-              <input
-                inputMode="numeric"
-                maxLength={4}
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-              />
-            </label>
-          )}
-          {dateKind === 'range' && (
-            <label className="community-field">
-              <span>To</span>
-              <input
-                inputMode="numeric"
-                maxLength={4}
-                value={endYear}
-                onChange={(e) => setEndYear(e.target.value)}
-              />
-            </label>
-          )}
-        </div>
+        <EventDateFields wording="staff" value={eventDate} onChange={setEventDate} />
       </fieldset>
       {photos.length > 0 && (
         <fieldset className="admin-fieldset">
@@ -390,11 +329,7 @@ function ContributionForm({
         <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />
         <span>Feature this contribution</span>
       </label>
-      <label className="community-field">
-        <span>Reason *</span>
-        <input value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} />
-        <small>Shown to other staff in the change history. Not shown publicly.</small>
-      </label>
+      <ReasonField value={reason} onChange={setReason} />
       <div className="admin-form-actions">
         <button className="community-primary" disabled={busy}>
           {busy && <LoaderCircle size={16} className="community-spinner" />} Save contribution
