@@ -11,6 +11,7 @@ import {
 import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
+import { ReasonField, useStaffRequest } from './admin-shared';
 
 export const fieldLabels: Record<string, string> = {
   name: 'Name',
@@ -169,8 +170,7 @@ export function ChangeHistory({
 }) {
   const [undoing, setUndoing] = useState<string | null>(null);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [undoError, setUndoError] = useState('');
+  const { busy, error: undoError, setError: setUndoError, send } = useStaffRequest();
   const batches: StaffEdit[][] = [];
   for (const edit of history ?? []) {
     const last = batches.at(-1);
@@ -179,25 +179,14 @@ export function ChangeHistory({
   }
 
   async function undo(editId: string) {
-    if (reason.trim().length < 3) {
-      setUndoError('Say briefly why you are undoing this change.');
-      return;
-    }
-    setBusy(true);
-    setUndoError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/edits/${encodeURIComponent(editId)}/undo`,
-        { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) },
-      );
-      setUndoing(null);
-      setReason('');
-      onUndone(result.edits);
-    } catch (failure) {
-      setUndoError(failure instanceof Error ? failure.message : 'The change could not be undone.');
-    } finally {
-      setBusy(false);
-    }
+    const edits = await send(`/admin/edits/${encodeURIComponent(editId)}/undo`, {}, reason, {
+      missingReason: 'Say briefly why you are undoing this change.',
+      failure: 'The change could not be undone.',
+    });
+    if (!edits) return;
+    setUndoing(null);
+    setReason('');
+    onUndone(edits);
   }
 
   return (
@@ -258,15 +247,13 @@ export function ChangeHistory({
                 <div className="admin-undo">
                   {undoing === first.batchId ? (
                     <>
-                      <label className="community-field">
-                        <span>Why undo this change?</span>
-                        <input
-                          value={reason}
-                          maxLength={1000}
-                          autoFocus
-                          onChange={(event) => setReason(event.target.value)}
-                        />
-                      </label>
+                      <ReasonField
+                        label="Why undo this change?"
+                        value={reason}
+                        onChange={setReason}
+                        hint={null}
+                        autoFocus
+                      />
                       {undoError && <CommunityNotice kind="error">{undoError}</CommunityNotice>}
                       <div className="admin-form-actions">
                         <button

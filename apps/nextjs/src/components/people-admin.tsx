@@ -11,13 +11,19 @@ import {
   type StaffEdit,
   type StaffPersonEdit,
 } from '@southview/validators';
-import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
 import { ChangeHistory, fieldLabels, useStaffHistory } from './admin-history';
 import { PersonMaterials, PersonNotes } from './person-records-admin';
 import { StoryEditor } from './story-admin';
 import { PersonContributions } from './contributions-admin';
+import {
+  ReasonField,
+  hasReason,
+  personSourceIds,
+  savedMessage,
+  useStaffRequest,
+} from './admin-shared';
 import { DeleteRecord, RecentlyDeleted } from './admin-delete';
 
 type Fields = {
@@ -81,8 +87,6 @@ const years = (person: Person) =>
     ? `${person.birthYear ?? '?'} – ${person.deathYear ?? '?'}`
     : 'Years unknown';
 const months = Array.from({ length: 12 }, (_, index) => index + 1);
-const errorText = (failure: unknown, fallback: string) =>
-  failure instanceof Error ? failure.message : fallback;
 
 export function PeopleAdmin({
   archive,
@@ -256,8 +260,7 @@ function PersonEditor({
   const [savedFields, setSavedFields] = useState(() => fieldsFor(person));
   const [fields, setFields] = useState(savedFields);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, setError, send } = useStaffRequest();
   const [notice, setNotice] = useState('');
   const [storyDirty, setStoryDirty] = useState(false);
   const history = useStaffHistory(`/admin/persons/${encodeURIComponent(person.id)}`);
@@ -310,27 +313,15 @@ function PersonEditor({
       setError('Enter the person’s public name.');
       return;
     }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are making this change. It is shown in the change history.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/persons/${encodeURIComponent(person.id)}`,
-        { method: 'POST', body: JSON.stringify({ patch, reason: reason.trim() }) },
-      );
+    const edits = await send(`/admin/persons/${encodeURIComponent(person.id)}`, { patch }, reason, {
+      missingReason:
+        'Say briefly why you are making this change. It is shown in the change history.',
+    });
+    if (edits)
       saved(
-        result.edits,
-        result.edits.length
-          ? 'Saved. The change is live and listed in the history below.'
-          : 'Nothing changed.',
+        edits,
+        savedMessage(edits, 'Saved. The change is live and listed in the history below.'),
       );
-    } catch (failure) {
-      setError(errorText(failure, 'The change could not be saved.'));
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
@@ -385,16 +376,12 @@ function PersonEditor({
                 onChange={(event) => edit('summary', event.target.value)}
               />
             </label>
-            <label className="community-field">
-              <span>Reason for this change *</span>
-              <input
-                value={reason}
-                maxLength={1000}
-                placeholder="For example: birth year checked against the death certificate"
-                onChange={(event) => setReason(event.target.value)}
-              />
-              <small>Shown to other staff in the change history. Not shown publicly.</small>
-            </label>
+            <ReasonField
+              label="Reason for this change *"
+              value={reason}
+              onChange={setReason}
+              placeholder="For example: birth year checked against the death certificate"
+            />
           </div>
           <div className="admin-form-actions">
             <button className="community-primary" disabled={busy || !changed.length}>
@@ -463,19 +450,6 @@ function PersonEditor({
       </div>
     </section>
   );
-}
-
-/** Sources this person's record already cites, for a new connection to cite. */
-function personSources(person: Person, archive: ArchiveData) {
-  const ids = new Set([
-    ...person.summaryCitations.map((item) => item.sourceId),
-    ...person.biography.flatMap((block) => block.citations.map((item) => item.sourceId)),
-    ...archive.relations
-      .filter((item) => item.personId === person.id)
-      .flatMap((item) => item.citations.map((citation) => citation.sourceId)),
-    ...archive.materials.filter((item) => item.personId === person.id).map((item) => item.sourceId),
-  ]);
-  return archive.sources.filter((source) => ids.has(source.id));
 }
 
 function PersonLinks({
@@ -564,28 +538,13 @@ function LinkEditor({
   const [label, setLabel] = useState(link.label);
   const [description, setDescription] = useState(link.description);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const request = useStaffRequest();
+  const { busy, error, setError } = request;
   const changed = label.trim() !== link.label || description.trim() !== link.description;
 
   async function send(path: string, body: Record<string, unknown>, message: string) {
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are making this change.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(path, {
-        method: 'POST',
-        body: JSON.stringify({ ...body, reason: reason.trim() }),
-      });
-      onSaved(result.edits, message);
-    } catch (failure) {
-      setError(errorText(failure, 'The change could not be saved.'));
-    } finally {
-      setBusy(false);
-    }
+    const edits = await request.send(path, body, reason);
+    if (edits) onSaved(edits, message);
   }
   const base = `/admin/links/${encodeURIComponent(link.id)}`;
   return (
@@ -604,14 +563,7 @@ function LinkEditor({
           onChange={(event) => setDescription(event.target.value)}
         />
       </label>
-      <label className="community-field">
-        <span>Reason *</span>
-        <input
-          value={reason}
-          maxLength={1000}
-          onChange={(event) => setReason(event.target.value)}
-        />
-      </label>
+      <ReasonField value={reason} onChange={setReason} />
       <div className="admin-form-actions">
         <button
           className="community-primary"
@@ -630,6 +582,10 @@ function LinkEditor({
           className="community-text-button admin-danger"
           disabled={busy}
           onClick={() => {
+            if (!hasReason(reason)) {
+              setError('Say briefly why you are removing this connection.');
+              return;
+            }
             if (
               window.confirm(
                 'Remove this connection? The place stays on the map for anyone else connected to it. You can undo this from the change history.',
@@ -662,14 +618,14 @@ function NewLink({
   const places = archive.places
     .filter((place) => !linked.has(place.id))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const sources = personSources(person, archive);
+  const cited = personSourceIds(person, archive);
+  const sources = archive.sources.filter((source) => cited.has(source.id));
   const [placeId, setPlaceId] = useState('');
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [sourceId, setSourceId] = useState(sources[0]?.id ?? '');
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, setError, send } = useStaffRequest();
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -677,30 +633,19 @@ function NewLink({
       setError('Choose a place, describe the relationship and choose a source.');
       return;
     }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are making this change.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>('/admin/links', {
-        method: 'POST',
-        body: JSON.stringify({
-          personId: person.id,
-          placeId,
-          label: label.trim(),
-          description: description.trim(),
-          sourceId,
-          reason: reason.trim(),
-        }),
-      });
-      onSaved(result.edits);
-    } catch (failure) {
-      setError(errorText(failure, 'The connection could not be saved.'));
-    } finally {
-      setBusy(false);
-    }
+    const edits = await send(
+      '/admin/links',
+      {
+        personId: person.id,
+        placeId,
+        label: label.trim(),
+        description: description.trim(),
+        sourceId,
+      },
+      reason,
+      { failure: 'The connection could not be saved.' },
+    );
+    if (edits) onSaved(edits);
   }
 
   return (
@@ -748,14 +693,7 @@ function NewLink({
         </select>
         <small>Every connection on the public page cites a source this record already uses.</small>
       </label>
-      <label className="community-field">
-        <span>Reason *</span>
-        <input
-          value={reason}
-          maxLength={1000}
-          onChange={(event) => setReason(event.target.value)}
-        />
-      </label>
+      <ReasonField value={reason} onChange={setReason} />
       <div className="admin-form-actions">
         <button className="community-primary" disabled={busy}>
           {busy && <LoaderCircle size={16} className="community-spinner" />} Connect

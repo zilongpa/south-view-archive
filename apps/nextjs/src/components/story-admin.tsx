@@ -2,9 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, BookText, LoaderCircle, Plus, Trash2, X } from 'lucide-react';
 import type { ArchiveData, Person, StaffEdit } from '@southview/validators';
-import { communityRequest } from '@/lib/community-client';
 import { CommunityNotice } from './community-shell';
-import { personSourceIds } from './person-records-admin';
+import { ReasonField, personSourceIds, savedMessage, useStaffRequest } from './admin-shared';
 
 type Citation = { sourceId: string; locator: string };
 type Draft = { key: string; from?: number; text: string; citations: Citation[] };
@@ -48,8 +47,7 @@ export function StoryEditor({
   const [base, setBase] = useState<Paragraph[]>(person.biography);
   const [drafts, setDrafts] = useState<Draft[]>(() => draftsFor(person.biography));
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, setError, send } = useStaffRequest();
   const dirty = comparable(drafts) !== comparable(draftsFor(base));
   const latest = JSON.stringify(person.biography);
   const loaded = useRef(latest);
@@ -114,46 +112,34 @@ export function StoryEditor({
       setError(`Paragraph ${uncited + 1} needs at least one source.`);
       return;
     }
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are changing the story.');
-      return;
+    const edits = await send(
+      `/admin/persons/${encodeURIComponent(person.id)}/biography`,
+      {
+        base,
+        paragraphs: drafts.map((draft) => ({
+          ...(draft.from === undefined ? {} : { from: draft.from }),
+          text: draft.text.trim(),
+          citations: draft.citations.map((citation) => ({
+            sourceId: citation.sourceId,
+            ...(citation.locator.trim() ? { locator: citation.locator.trim() } : {}),
+          })),
+        })),
+      },
+      reason,
+      {
+        missingReason: 'Say briefly why you are changing the story.',
+        failure: 'The story could not be saved.',
+      },
+    );
+    if (!edits) return;
+    const saved = edits.find((edit) => edit.targetTable === 'persons')?.next as Person | undefined;
+    if (saved) {
+      loaded.current = JSON.stringify(saved.biography);
+      setBase(saved.biography);
+      setDrafts(draftsFor(saved.biography));
     }
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/persons/${encodeURIComponent(person.id)}/biography`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            base,
-            paragraphs: drafts.map((draft) => ({
-              ...(draft.from === undefined ? {} : { from: draft.from }),
-              text: draft.text.trim(),
-              citations: draft.citations.map((citation) => ({
-                sourceId: citation.sourceId,
-                ...(citation.locator.trim() ? { locator: citation.locator.trim() } : {}),
-              })),
-            })),
-            reason: reason.trim(),
-          }),
-        },
-      );
-      const saved = result.edits.find((edit) => edit.targetTable === 'persons')?.next as
-        | Person
-        | undefined;
-      if (saved) {
-        loaded.current = JSON.stringify(saved.biography);
-        setBase(saved.biography);
-        setDrafts(draftsFor(saved.biography));
-      }
-      setReason('');
-      onSaved(result.edits, result.edits.length ? 'Saved the story.' : 'Nothing changed.');
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The story could not be saved.');
-    } finally {
-      setBusy(false);
-    }
+    setReason('');
+    onSaved(edits, savedMessage(edits, 'Saved the story.'));
   }
 
   return (
@@ -284,16 +270,12 @@ export function StoryEditor({
       {(dirty || error) && (
         <div className="admin-link-editor">
           {error && <CommunityNotice kind="error">{error}</CommunityNotice>}
-          <label className="community-field">
-            <span>Reason for changing the story *</span>
-            <input
-              value={reason}
-              maxLength={1000}
-              placeholder="For example: second paragraph corrected against the obituary"
-              onChange={(event) => setReason(event.target.value)}
-            />
-            <small>Shown to other staff in the change history. Not shown publicly.</small>
-          </label>
+          <ReasonField
+            label="Reason for changing the story *"
+            value={reason}
+            onChange={setReason}
+            placeholder="For example: second paragraph corrected against the obituary"
+          />
           <div className="admin-form-actions">
             <button
               type="button"

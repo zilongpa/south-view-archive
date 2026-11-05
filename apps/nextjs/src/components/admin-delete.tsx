@@ -5,6 +5,7 @@ import type { StaffEdit } from '@southview/validators';
 import { communityRequest } from '@/lib/community-client';
 import { displayPersonName } from '@/lib/person-name';
 import { CommunityNotice } from './community-shell';
+import { ReasonField, errorText, hasReason, useStaffRequest } from './admin-shared';
 
 type Kind = 'person' | 'place';
 type Impact = {
@@ -14,8 +15,6 @@ type Impact = {
 };
 const area = (kind: Kind) => (kind === 'person' ? 'persons' : 'places');
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const errorText = (failure: unknown, fallback: string) =>
-  failure instanceof Error ? failure.message : fallback;
 
 /**
  * Deletes a person or place after showing what goes with it. Anything that must be resolved
@@ -34,23 +33,25 @@ export function DeleteRecord({
 }) {
   const [impact, setImpact] = useState<Impact | null>(null);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [checking, setChecking] = useState(false);
+  const request = useStaffRequest();
+  const { error, setError } = request;
+  const busy = checking || request.busy;
   const base = `/admin/${area(kind)}/${encodeURIComponent(id)}`;
 
   async function check() {
-    setBusy(true);
+    setChecking(true);
     setError('');
     try {
       setImpact(await communityRequest<Impact>(`${base}/deletion`));
     } catch (failure) {
       setError(errorText(failure, 'Could not check what deleting would remove.'));
     } finally {
-      setBusy(false);
+      setChecking(false);
     }
   }
   async function remove() {
-    if (reason.trim().length < 3) {
+    if (!hasReason(reason)) {
       setError(`Say briefly why you are deleting this ${kind}.`);
       return;
     }
@@ -60,19 +61,10 @@ export function DeleteRecord({
       )
     )
       return;
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(`${base}/delete`, {
-        method: 'POST',
-        body: JSON.stringify({ reason: reason.trim() }),
-      });
-      onDeleted(result.edits);
-    } catch (failure) {
-      setError(errorText(failure, `The ${kind} could not be deleted.`));
-    } finally {
-      setBusy(false);
-    }
+    const edits = await request.send(`${base}/delete`, {}, reason, {
+      failure: `The ${kind} could not be deleted.`,
+    });
+    if (edits) onDeleted(edits);
   }
 
   const removes = impact
@@ -121,20 +113,16 @@ export function DeleteRecord({
             {impact.mentions > 0 &&
               ` ${count(impact.mentions, 'other record or contribution mentions', 'other records and contributions mention')} it and will no longer list it.`}
           </p>
-          <label className="community-field">
-            <span>Reason *</span>
-            <input
-              value={reason}
-              maxLength={1000}
-              placeholder={
-                kind === 'person'
-                  ? 'For example: duplicate of another record'
-                  : 'For example: added twice'
-              }
-              onChange={(event) => setReason(event.target.value)}
-            />
-            <small>Shown to other staff with the restore option. Not shown publicly.</small>
-          </label>
+          <ReasonField
+            value={reason}
+            onChange={setReason}
+            placeholder={
+              kind === 'person'
+                ? 'For example: duplicate of another record'
+                : 'For example: added twice'
+            }
+            hint="Shown to other staff with the restore option. Not shown publicly."
+          />
           <div className="admin-form-actions">
             <button
               type="button"
@@ -175,8 +163,7 @@ export function RecentlyDeleted({
   const [items, setItems] = useState<StaffEdit[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, setError, send } = useStaffRequest();
   const load = useCallback(async () => {
     try {
       setItems(
@@ -191,26 +178,15 @@ export function RecentlyDeleted({
   }, [load, version]);
 
   async function restore(edit: StaffEdit) {
-    if (reason.trim().length < 3) {
-      setError('Say briefly why you are restoring it.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const result = await communityRequest<{ edits: StaffEdit[] }>(
-        `/admin/edits/${encodeURIComponent(edit.id)}/undo`,
-        { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) },
-      );
-      setOpen(null);
-      setReason('');
-      onRestored(result.edits, edit.targetId);
-      void load();
-    } catch (failure) {
-      setError(errorText(failure, 'It could not be restored.'));
-    } finally {
-      setBusy(false);
-    }
+    const edits = await send(`/admin/edits/${encodeURIComponent(edit.id)}/undo`, {}, reason, {
+      missingReason: 'Say briefly why you are restoring it.',
+      failure: 'It could not be restored.',
+    });
+    if (!edits) return;
+    setOpen(null);
+    setReason('');
+    onRestored(edits, edit.targetId);
+    void load();
   }
 
   if (!items?.length && !error) return null;
@@ -256,15 +232,13 @@ export function RecentlyDeleted({
               </div>
               {open === edit.id && (
                 <div className="admin-link-editor">
-                  <label className="community-field">
-                    <span>Why restore it? *</span>
-                    <input
-                      value={reason}
-                      maxLength={1000}
-                      autoFocus
-                      onChange={(event) => setReason(event.target.value)}
-                    />
-                  </label>
+                  <ReasonField
+                    label="Why restore it? *"
+                    value={reason}
+                    onChange={setReason}
+                    hint={null}
+                    autoFocus
+                  />
                   <div className="admin-form-actions">
                     <button
                       type="button"

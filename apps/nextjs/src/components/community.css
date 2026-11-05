@@ -29,6 +29,9 @@
   padding: 0;
   border: 0;
 }
+.story-context-fields .event-date-years {
+  margin-top: 14px;
+}
 .story-context-fields legend {
   font-size: 16px;
   font-weight: 600;
