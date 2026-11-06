@@ -1,10 +1,10 @@
 import type { Place, Scope } from '@southview/validators';
 
-// The cemetery grounds: the Fulton County tax parcels owned by the South View Cemetery
-// Association (tax year 2027, retrieved 2026-11-06), merged into one outline. Lots the
-// Association owns across Jonesboro Road and an outlying lot are left out, as neither the mapped
-// cemetery nor the dated land survey treats them as burial ground. An ownership outline from
-// public records, not a surveyed boundary.
+// The cemetery grounds: the four Fulton County tax parcels of the South View Cemetery Association
+// that the mapped cemetery covers (tax year 2027, retrieved 2026-11-06), merged into one outline of
+// about 100.8 acres. The Association's 16 smaller lots nearby (across Jonesboro Road, on Browns Mill
+// Road, Knox Drive and Merrilyn Drive) lie wholly outside both the mapped cemetery and the dated land
+// survey, so they are left out. An ownership outline from public records, not a surveyed boundary.
 export const cemeteryArea = {
   type: 'Feature' as const,
   properties: {
@@ -18,7 +18,7 @@ export const cemeteryArea = {
     type: 'Polygon' as const,
     coordinates: [
       [
-        [-84.3749836, 33.7023485],
+        [-84.3748124, 33.7022631],
         [-84.3765114, 33.7031318],
         [-84.3743487, 33.704871],
         [-84.3717475, 33.7026009],
@@ -33,10 +33,6 @@ export const cemeteryArea = {
         [-84.3641657, 33.7017405],
         [-84.3650066, 33.7017325],
         [-84.3649886, 33.7000149],
-        [-84.3645628, 33.7000189],
-        [-84.364528, 33.699289],
-        [-84.3649986, 33.6992937],
-        [-84.365021, 33.7000146],
         [-84.3681055, 33.6999854],
         [-84.3681808, 33.6996925],
         [-84.3684046, 33.6991361],
@@ -44,10 +40,8 @@ export const cemeteryArea = {
         [-84.3714251, 33.6987493],
         [-84.3727779, 33.7002234],
         [-84.3741612, 33.7017719],
-        [-84.3743475, 33.7019444],
-        [-84.3745524, 33.7021014],
-        [-84.3747989, 33.7022651],
-        [-84.3749836, 33.7023485],
+        [-84.3744478, 33.7020249],
+        [-84.3748124, 33.7022631],
       ],
     ],
   },
