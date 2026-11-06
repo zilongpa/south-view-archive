@@ -96,7 +96,14 @@ The public live SVCMAP instance has more records than the checked-in seeds. No i
 
 ## Public-copy review
 
-### Cemetery map overlay (2026-10-07)
+### Cemetery map overlay (2026-11-06)
+
+- Source: Fulton County, Georgia [tax parcels](https://gismaps.fultoncountyga.gov/arcgispub/rest/services/OpenData/Tax_Parcels/MapServer) (open data, tax year 2027), retrieved 2026-11-06: the 20 parcels whose owner is the South View Cemetery Association.
+- Method: the parcels were merged into one outline of about 101.6 acres, closing the narrow gaps of internal roads. Lots across Jonesboro Road (about 9 acres, on Browns Mill Road and the west side of Jonesboro Road) and one outlying lot at 1884 Jonesboro Road were left out, because neither the OpenStreetMap cemetery nor the dated land survey compiled by another class group shows them as burial ground.
+- Purpose / precision: shaded cemetery area and return-to-cemetery framing. An ownership outline from public tax records, not a surveyed boundary; it does not establish any burial or validate grave points.
+- Rights: public records of Fulton County; the map credits the county.
+
+### Earlier cemetery map overlay (2026-10-07, replaced)
 
 - Provider / author: OpenStreetMap contributors; compiled as **Initial archive compilation**, not attributed to a named community member.
 - Source: [South-View Cemetery, way 34773826](https://www.openstreetmap.org/way/34773826), version 9, last edited 2025-06-11. Accessed 2026-10-07 through the [OSM map API](https://api.openstreetmap.org/api/0.6/map?bbox=-84.382,33.693,-84.364,33.709).

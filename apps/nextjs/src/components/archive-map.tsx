@@ -179,7 +179,7 @@ export default function ArchiveMap(props: Props) {
           type: 'geojson',
           data: cemeteryArea,
           attribution:
-            '<a href="https://www.openstreetmap.org/way/34773826" target="_blank" rel="noreferrer">Cemetery outline © OpenStreetMap</a>',
+            '<a href="https://gismaps.fultoncountyga.gov/arcgispub/rest/services/OpenData/Tax_Parcels/MapServer" target="_blank" rel="noreferrer">Cemetery outline: Fulton County parcels</a>',
         });
         map.addLayer({
           id: 'south-view-fill',
@@ -727,7 +727,7 @@ export default function ArchiveMap(props: Props) {
             href={cemeteryArea.properties.sourceUrl}
             target="_blank"
             rel="noreferrer"
-            title="Approximate cemetery outline from OpenStreetMap; not a surveyed property boundary."
+            title="Cemetery outline from the Fulton County tax parcels the South View Cemetery Association owns; not a surveyed boundary."
           >
             South-View area
           </a>
