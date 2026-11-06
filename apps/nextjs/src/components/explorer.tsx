@@ -88,17 +88,19 @@ function Monogram({ person, large = false }: { person: Person; large?: boolean }
   );
 }
 
-/** Opens Google Maps with directions to a mapped place, in a new tab. */
-function DirectionsLink({ coordinates }: { coordinates: [number, number] }) {
+/** A small chip that opens Google Maps with directions to a mapped place, in a new tab. */
+function DirectionsLink({ coordinates, name }: { coordinates: [number, number]; name: string }) {
   return (
     <a
-      className="directions-link"
+      className="directions-chip"
       href={directionsUrl(coordinates)}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label={`Directions to ${name} in Google Maps (opens in a new tab)`}
+      title="Directions in Google Maps"
     >
-      <Navigation size={14} aria-hidden="true" /> Directions in Google Maps
-      <span className="sr-only"> (opens in a new tab)</span>
+      <Navigation size={12} aria-hidden="true" />
+      Directions
     </a>
   );
 }
@@ -757,6 +759,12 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                           </span>
                           <h2>{placeOnly.name}</h2>
                           {placeOnly.address && <p className="person-years">{placeOnly.address}</p>}
+                          {placeOnly.coordinates && (
+                            <DirectionsLink
+                              coordinates={placeOnly.coordinates}
+                              name={placeOnly.name}
+                            />
+                          )}
                         </div>
                         <p className="detail-summary">
                           {placeOnly.summary ||
@@ -771,9 +779,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                             (placeOnly.summary || placePeople[0]?.relation.description) && (
                               <p className="quiet-note">{placeOnly.locationNote}</p>
                             )}
-                          {placeOnly.coordinates && (
-                            <DirectionsLink coordinates={placeOnly.coordinates} />
-                          )}
                         </div>
                         <section className="connected-places" aria-labelledby="panel-place-people">
                           <h3 id="panel-place-people">
@@ -860,9 +865,15 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                               const place = archive.places.find((p) => p.id === relation.placeId)!;
                               return (
                                 <div
-                                  className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''}`}
+                                  className={`connected-place ${place.id === selectedPlace?.id ? 'is-active' : ''} ${place.coordinates ? 'has-directions' : ''}`}
                                   key={relation.id}
                                 >
+                                  {place.coordinates && (
+                                    <DirectionsLink
+                                      coordinates={place.coordinates}
+                                      name={place.name}
+                                    />
+                                  )}
                                   <span className="eyebrow">
                                     {relation.label}
                                     {place.precision === 'reference'
@@ -882,9 +893,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                                     <ArrowUpRight size={15} />
                                   </button>
                                   <p className="relation-note">{relation.description}</p>
-                                  {place.coordinates && (
-                                    <DirectionsLink coordinates={place.coordinates} />
-                                  )}
                                 </div>
                               );
                             })
