@@ -6,7 +6,7 @@ test('the attributed cemetery outline is a closed Atlanta polygon in longitude/l
   const ring = cemeteryArea.geometry.coordinates[0]!;
   assert.deepEqual(ring[0], ring.at(-1));
   assert.ok(ring.length > 4);
-  assert.equal(cemeteryArea.properties.sourceUrl, 'https://www.openstreetmap.org/way/34773826');
+  assert.match(cemeteryArea.properties.sourceUrl, /fultoncountyga\.gov\/.*Tax_Parcels/);
   for (const [lng, lat] of ring) {
     assert.ok(lng! > -84.38 && lng! < -84.36, 'longitude must remain in South-View');
     assert.ok(lat! > 33.69 && lat! < 33.71, 'latitude must remain in South-View');
