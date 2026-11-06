@@ -160,6 +160,7 @@ export function blockToSubmissionInput(
     eventDate: { kind: 'unknown' },
     placement,
     proposedPersonName: '',
+    proposedOccupation: '',
     title: block.title.trim() || defaultBlockTitle(block, person.name),
     body: block.body.trim(),
     context: block.context.trim(),

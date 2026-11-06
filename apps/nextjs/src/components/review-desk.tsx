@@ -71,6 +71,7 @@ type PersonFields = {
   birthYear: string;
   deathYear: string;
   themes: string;
+  occupations: string;
   summary: string;
 };
 type PersonPatch = NonNullable<ReviewInput['personPatch']>;
@@ -83,6 +84,7 @@ function personFieldsFor(personId: string, archive: ArchiveData): PersonFields {
     birthYear: person?.birthYear ? String(person.birthYear) : '',
     deathYear: person?.deathYear ? String(person.deathYear) : '',
     themes: person ? person.themes.join(', ') : 'Community',
+    occupations: (person?.occupations ?? []).join(', '),
     summary: person?.summary ?? '',
   };
 }
@@ -106,6 +108,7 @@ function personPatchFor(
   if (fields.deathYear.trim() !== initial.deathYear)
     patch.deathYear = fields.deathYear.trim() ? Number(fields.deathYear) : null;
   if (fields.themes !== initial.themes) patch.themes = splitList(fields.themes);
+  if (fields.occupations !== initial.occupations) patch.occupations = splitList(fields.occupations);
   if (fields.summary.trim() && fields.summary.trim() !== initial.summary)
     patch.summary = fields.summary.trim();
   return Object.keys(patch).length ? patch : undefined;
@@ -118,6 +121,7 @@ const personFieldLabels: Record<keyof PersonPatch, string> = {
   birthDate: 'full birth date',
   deathDate: 'full death date',
   themes: 'themes',
+  occupations: 'occupations',
   summary: 'summary',
 };
 /** In-page additions say where they belong; the desk starts there so one click publishes them. */
@@ -672,10 +676,12 @@ function ReviewEditor({
     })),
   );
   const [place, setPlace] = useState(() => initialPlace(record, archive));
-  const [personFields, setPersonFields] = useState(() =>
-    personFieldsFor(record.input.personId ?? '', archive),
-  );
-  const initialPersonFields = useRef(personFields);
+  // A new person starts with the occupation the contributor suggested, ready to publish or edit.
+  const [personFields, setPersonFields] = useState(() => ({
+    ...personFieldsFor(record.input.personId ?? '', archive),
+    ...(record.input.personId ? {} : { occupations: record.input.proposedOccupation ?? '' }),
+  }));
+  const initialPersonFields = useRef(personFieldsFor(record.input.personId ?? '', archive));
   const personPatch = personPatchFor(personFields, initialPersonFields.current, !!draft.personId);
   const themeOptions = [...new Set(archive.people.flatMap((person) => person.themes))];
   const placementHint = placementExplanation(record, applyTo);
@@ -1061,6 +1067,17 @@ function ReviewEditor({
                       />
                     </label>
                   </div>
+                  <label className="community-field">
+                    <span>Occupations</span>
+                    <input
+                      value={personFields.occupations}
+                      onChange={(event) => editPerson('occupations', event.target.value)}
+                      placeholder="Separate occupations with commas"
+                    />
+                    {!draft.personId && record.input.proposedOccupation && (
+                      <small>Suggested by the contributor: {record.input.proposedOccupation}</small>
+                    )}
+                  </label>
                   <label className="community-field">
                     <span>Themes</span>
                     <input

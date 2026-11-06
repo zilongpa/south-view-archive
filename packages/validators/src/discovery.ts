@@ -160,7 +160,9 @@ function discoveryIndex(data: ArchiveData): IndexedResult[] {
   const linkedText = (personIds: string[], placeIds: string[], creditIds: string[]) => [
     ...personIds.flatMap((id) => {
       const person = people.get(id);
-      return person ? [person.name, ...person.aliases, ...person.themes] : [];
+      return person
+        ? [person.name, ...person.aliases, ...person.themes, ...(person.occupations ?? [])]
+        : [];
     }),
     ...placeIds.flatMap((id) => {
       const place = places.get(id);
@@ -217,6 +219,7 @@ function discoveryIndex(data: ArchiveData): IndexedResult[] {
       [person.summary, ...person.biography.map((paragraph) => paragraph.text)],
       [
         ...person.aliases,
+        ...(person.occupations ?? []),
         ...relations.flatMap((relation) => [relation.label, relation.description]),
       ],
     );

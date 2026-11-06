@@ -50,6 +50,8 @@ export const personSchema = z.object({
   birthDate: lifeDateSchema.optional(),
   deathDate: lifeDateSchema.optional(),
   themes: z.array(z.string()),
+  /** What the person did, such as Pastor or Insurance executive; searchable tags. Absent when unknown. */
+  occupations: z.array(z.string()).optional(),
   summary: z.string(),
   summaryCitations: z.array(citationSchema).min(1),
   biography: z.array(

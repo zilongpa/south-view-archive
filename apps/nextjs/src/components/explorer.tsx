@@ -841,6 +841,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                           <div className="detail-identity">
                             <span className="theme-label">{selected.themes.join(' · ')}</span>
                             <h2>{displayPersonName(selected.name)}</h2>
+                            {!!selected.occupations?.length && (
+                              <p className="person-occupations">
+                                {selected.occupations.join(' · ')}
+                              </p>
+                            )}
                             {(selected.birthYear || selected.deathYear) && (
                               <p className="person-years">
                                 {selected.birthYear

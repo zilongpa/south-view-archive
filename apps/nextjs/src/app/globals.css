@@ -1013,6 +1013,12 @@ svg {
 .detail-person .person-years {
   font-size: 11px;
 }
+.detail-person .person-occupations {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink, #2b2721);
+}
 .detail-summary {
   font:
     17px/1.6 Georgia,
@@ -1391,6 +1397,24 @@ svg {
   border: 1px solid #d5bfb5;
   padding: 8px 12px;
   min-height: 35px;
+}
+/* Occupations sit just above the themes: filled, sentence case, and each one searches the map. */
+.archive-tags.archive-occupations {
+  margin-bottom: -12px;
+}
+.archive-tag-occupation {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  text-transform: none;
+  text-decoration: none;
+  background: #f3ece4;
+  border-color: #e2d3c4;
+  border-radius: 999px;
+}
+.archive-tag-occupation:hover {
+  border-color: var(--wine);
 }
 .archive-summary {
   font:
