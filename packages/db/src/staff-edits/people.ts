@@ -30,6 +30,10 @@ export async function editPerson(personId: string, raw: StaffPersonEdit, actor: 
     if (patch.name !== undefined) next.name = patch.name;
     if (patch.aliases !== undefined) next.aliases = patch.aliases;
     if (patch.themes !== undefined) next.themes = patch.themes;
+    if (patch.occupations !== undefined) {
+      if (patch.occupations.length) next.occupations = patch.occupations;
+      else delete next.occupations;
+    }
     if (patch.summary !== undefined) next.summary = patch.summary;
     const conflict = applyLifeDates(next, patch);
     if (conflict) throw new DomainError('BAD_REQUEST', conflict);

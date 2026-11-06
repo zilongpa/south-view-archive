@@ -26,6 +26,7 @@ const fieldLabels: Record<string, string> = {
   'personPatch.birthYear': 'Birth year',
   'personPatch.deathYear': 'Death year',
   'personPatch.themes': 'Themes',
+  'personPatch.occupations': 'Occupations',
   'personPatch.summary': 'Person summary',
   placePatch: 'Map place update',
   'placePatch.placeId': 'Place',

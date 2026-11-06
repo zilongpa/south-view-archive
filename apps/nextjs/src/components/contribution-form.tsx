@@ -94,6 +94,7 @@ type Draft = {
   kind: SubmissionInput['kind'];
   personId: string;
   proposedPersonName: string;
+  proposedOccupation: string;
   title: string;
   body: string;
   context: string;
@@ -154,6 +155,7 @@ export function ContributionForm({
     kind: 'new-person',
     personId: initialPersonId ?? '',
     proposedPersonName: '',
+    proposedOccupation: '',
     title: '',
     body: '',
     context: '',
@@ -270,6 +272,7 @@ export function ContributionForm({
           body: '',
           context: '',
           proposedPersonName: '',
+          proposedOccupation: '',
           links: [],
           sourceCreator: '',
           narrator: '',
@@ -310,6 +313,7 @@ export function ContributionForm({
           const strings = [
             'personId',
             'proposedPersonName',
+            'proposedOccupation',
             'title',
             'body',
             'context',
@@ -419,6 +423,7 @@ export function ContributionForm({
       kind: effectiveKind,
       personId: draft.personId || null,
       proposedPersonName: draft.personId ? '' : draft.proposedPersonName,
+      proposedOccupation: draft.personId ? '' : draft.proposedOccupation,
       privateName,
       email: email.trim(),
       permission: true,
@@ -763,6 +768,21 @@ export function ContributionForm({
                     <small>
                       Use the name you know. Reviewers can help with name variations and
                       identification.
+                    </small>
+                  </label>
+                )}
+                {!draft.personId && (
+                  <label className={fieldClass('proposedOccupation')}>
+                    <span>What did they do? (optional)</span>
+                    <input
+                      value={draft.proposedOccupation}
+                      onChange={(event) => change('proposedOccupation', event.target.value)}
+                      maxLength={160}
+                      placeholder="e.g. Teacher, Pastor, Nurse"
+                    />
+                    <FieldError name="proposedOccupation" />
+                    <small>
+                      Their occupation or role, as you know it. Reviewers add it as a tag.
                     </small>
                   </label>
                 )}

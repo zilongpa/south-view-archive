@@ -164,6 +164,20 @@ export function PersonArchive({
                     <CitationMarks citations={person.summaryCitations} sources={data.sources} />
                   </p>
                 )}
+                {!!person.occupations?.length && (
+                  <div className="archive-tags archive-occupations" aria-label="Occupations">
+                    {person.occupations.map((occupation) => (
+                      <Link
+                        className="archive-tag archive-tag-occupation"
+                        key={occupation}
+                        href={`/explore?q=${encodeURIComponent(occupation)}`}
+                        title={`Find others in the archive: ${occupation}`}
+                      >
+                        {occupation}
+                      </Link>
+                    ))}
+                  </div>
+                )}
                 <div className="archive-tags" aria-label="Themes">
                   {person.themes.map((theme) => (
                     <Link

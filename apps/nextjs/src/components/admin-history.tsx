@@ -21,6 +21,7 @@ export const fieldLabels: Record<string, string> = {
   birthDate: 'Full birth date',
   deathDate: 'Full death date',
   themes: 'Themes',
+  occupations: 'Occupations',
   summary: 'Summary',
   summaryCitations: 'Summary sources',
   biography: 'Story',

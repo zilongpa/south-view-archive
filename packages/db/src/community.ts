@@ -595,6 +595,10 @@ async function publish(tx: Store, row: SubmissionRow, review: ReviewInput, revie
     const life: Record<string, unknown> = { ...base };
     const conflict = applyLifeDates(life, patch ?? {});
     if (conflict) throw new DomainError('BAD_REQUEST', conflict);
+    if (patch?.occupations !== undefined) {
+      if (patch.occupations.length) life.occupations = patch.occupations;
+      else delete life.occupations;
+    }
     return personSchema.parse({
       ...life,
       ...(patch?.name !== undefined ? { name: patch.name } : {}),

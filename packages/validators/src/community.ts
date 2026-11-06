@@ -104,6 +104,8 @@ export const submissionInputSchema = z
     eventDate: eventDateSchema.default({ kind: 'unknown' }),
     placement: placementSchema.optional(),
     proposedPersonName: z.string().trim().max(160).default(''),
+    /** For a new person: what they did, as the contributor knows it. Reviewers decide the tags. */
+    proposedOccupation: z.string().trim().max(160).default(''),
     title: z.string().trim().min(3, 'Give your story a title of at least 3 characters.').max(160),
     body: z.string().trim().min(20, 'Tell the story in at least 20 characters.').max(20000),
     context: z.string().trim().max(4000).default(''),
@@ -205,6 +207,11 @@ export const personPatchSchema = z.object({
   themes: z
     .array(z.string().trim().min(1, 'Remove the empty theme entry.').max(80))
     .max(20)
+    .optional(),
+  /** An empty list removes the occupations. */
+  occupations: z
+    .array(z.string().trim().min(1, 'Remove the empty occupation entry.').max(80))
+    .max(10)
     .optional(),
   summary: z
     .string()

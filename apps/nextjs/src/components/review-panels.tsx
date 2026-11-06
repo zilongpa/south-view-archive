@@ -477,6 +477,12 @@ export function OriginalSubmission({
           <dt>Context</dt>
           <dd>{record.input.context || 'None supplied'}</dd>
         </div>
+        {record.input.proposedOccupation && (
+          <div>
+            <dt>Their occupation, as suggested</dt>
+            <dd>{record.input.proposedOccupation}</dd>
+          </div>
+        )}
         <div>
           <dt>Original author</dt>
           <dd>{record.input.sourceCreator || 'Not supplied'}</dd>

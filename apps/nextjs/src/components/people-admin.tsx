@@ -36,6 +36,7 @@ type Fields = {
   deathMonth: string;
   deathDay: string;
   themes: string;
+  occupations: string;
   summary: string;
 };
 const list = (value: string) =>
@@ -54,6 +55,7 @@ function fieldsFor(person: Person): Fields {
     deathMonth: person.deathDate ? String(Number(person.deathDate.slice(5, 7))) : '',
     deathDay: person.deathDate?.length === 10 ? String(Number(person.deathDate.slice(8))) : '',
     themes: person.themes.join(', '),
+    occupations: (person.occupations ?? []).join(', '),
     summary: person.summary,
   };
 }
@@ -63,6 +65,8 @@ function patchFor(fields: Fields, saved: Fields): StaffPersonEdit['patch'] {
   if (fields.name.trim() !== saved.name) patch.name = fields.name.trim();
   if (list(fields.aliases).join(', ') !== saved.aliases) patch.aliases = list(fields.aliases);
   if (list(fields.themes).join(', ') !== saved.themes) patch.themes = list(fields.themes);
+  if (list(fields.occupations).join(', ') !== saved.occupations)
+    patch.occupations = list(fields.occupations);
   if (fields.summary.trim() !== saved.summary) patch.summary = fields.summary.trim();
   for (const life of ['birth', 'death'] as const) {
     const yearKey = `${life}Year` as const;
@@ -355,6 +359,17 @@ function PersonEditor({
                 placeholder="Separate names with commas"
                 onChange={(event) => edit('aliases', event.target.value)}
               />
+            </label>
+            <label className="community-field">
+              <span>Occupations</span>
+              <input
+                value={fields.occupations}
+                placeholder="For example: Pastor, Civil rights leader"
+                onChange={(event) => edit('occupations', event.target.value)}
+              />
+              <small>
+                Separate with commas. Shown as tags on the person page and found by search.
+              </small>
             </label>
             {(['birth', 'death'] as const).map((life) => (
               <LifeDateFields key={life} life={life} fields={fields} edit={edit} />

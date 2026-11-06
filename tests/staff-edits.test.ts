@@ -30,6 +30,7 @@ import {
   formatLifeDate,
   lifeDateSchema,
   reviewInputSchema,
+  searchArchive,
   submissionInputSchema,
   type Actor,
 } from '../packages/validators/src/index';
@@ -731,6 +732,38 @@ test('staff edits and contributions undo independently', async (t) => {
       // Clean up the setup.
       await removeMaterial(mention.material.id, 'Clean up', reviewer);
       await deleteRecord('person', 'test-duplicate', 'Clean up', reviewer);
+    });
+    await t.test('occupations are tags staff set and clear, and search finds them', async () => {
+      const before = await lewis();
+      assert.equal(before.occupations, undefined);
+      const tagged = await editPerson(
+        'john-lewis',
+        { patch: { occupations: ['Congressman', 'Civil rights leader'] }, reason: 'Occupations' },
+        reviewer,
+      );
+      assert.deepEqual(tagged.person.occupations, ['Congressman', 'Civil rights leader']);
+      const found = searchArchive(await getArchive(), {
+        q: 'congressman',
+        theme: 'all',
+        scope: 'atlanta',
+      });
+      assert.deepEqual(
+        found.people.map((person) => person.id),
+        ['john-lewis'],
+      );
+      // An empty list removes the field rather than storing an empty one.
+      const cleared = await editPerson(
+        'john-lewis',
+        { patch: { occupations: [] }, reason: 'Unsourced' },
+        reviewer,
+      );
+      assert.equal('occupations' in cleared.person, false);
+      // A reviewer can set them while publishing a contribution.
+      const id = await publish('john-lewis', { personPatch: { occupations: ['Activist'] } });
+      assert.deepEqual((await lewis()).occupations, ['Activist']);
+      await withdraw(id);
+      assert.equal((await lewis()).occupations, undefined);
+      assert.deepEqual({ ...(await lewis()), creditIds: before.creditIds }, before);
     });
     await t.test('full birth and death dates stay in their years', async () => {
       const before = await lewis();
