@@ -40,7 +40,7 @@
   top: 80px;
   left: 16px;
   bottom: auto;
-  width: 360px;
+  width: var(--sidebar-width, 360px);
   max-width: calc(100% - 32px);
   height: auto;
   max-height: calc(100% - 128px);
@@ -263,6 +263,22 @@
 .map-explorer .portrait-credit a {
   color: inherit;
   text-decoration: underline;
+}
+/* At the end of the person panel, after their places, like image credits on the full page. */
+.map-explorer .connected-places + .portrait-credit {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, #ded9cd);
+}
+.map-explorer .directions-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  color: var(--wine);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .map-explorer .detail-summary {
   font-size: 18px;
@@ -608,7 +624,7 @@
 }
 @media (max-width: 1000px) and (min-width: 761px) {
   .map-explorer .people-sidebar {
-    width: 330px;
+    width: var(--sidebar-width, 330px);
   }
   .map-explorer .detail-panel {
     width: var(--detail-width, 310px);
@@ -761,9 +777,23 @@
 .map-explorer .detail-panel .detail-resize {
   left: 0;
 }
+/* The search panel widens from its right edge, on a desktop only. */
+.map-explorer .people-sidebar .sidebar-resize {
+  left: auto;
+  right: 0;
+}
+.map-explorer .people-sidebar.is-resizing {
+  user-select: none;
+}
+.map-explorer .people-sidebar.is-resizing .sidebar-resize::after {
+  opacity: 1;
+}
 @media (max-width: 760px) {
   .map-explorer .detail-panel .detail-resize {
     left: 50%;
+  }
+  .map-explorer .people-sidebar .sidebar-resize {
+    display: none;
   }
 }
 

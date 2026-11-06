@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useDetailResize } from './detail-resize';
+import { useDetailResize, useSidebarResize } from './detail-resize';
 import {
   ArrowDownUp,
   ArrowLeft,
@@ -14,6 +14,7 @@ import {
   List,
   Map as MapIcon,
   MapPin,
+  Navigation,
   Search,
   SlidersHorizontal,
   Sprout,
@@ -23,7 +24,7 @@ import {
 import './explorer-map.css';
 import { SiteNavigation } from './site-navigation';
 import { MapPreview } from './map-preview';
-import { placeConnections, precisionLabels, soleOccupant } from '@/lib/place-mode';
+import { directionsUrl, placeConnections, precisionLabels, soleOccupant } from '@/lib/place-mode';
 import {
   portraitRights,
   searchArchive,
@@ -87,6 +88,21 @@ function Monogram({ person, large = false }: { person: Person; large?: boolean }
   );
 }
 
+/** Opens Google Maps with directions to a mapped place, in a new tab. */
+function DirectionsLink({ coordinates }: { coordinates: [number, number] }) {
+  return (
+    <a
+      className="directions-link"
+      href={directionsUrl(coordinates)}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <Navigation size={14} aria-hidden="true" /> Directions in Google Maps
+      <span className="sr-only"> (opens in a new tab)</span>
+    </a>
+  );
+}
+
 export function Explorer({ archive }: { archive: ArchiveData }) {
   const [state, setState] = useState<ExploreState>(initialExploreState);
   const [initialized, setInitialized] = useState(false);
@@ -99,6 +115,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   const detailRef = useRef<HTMLElement>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const detailResize = useDetailResize();
+  const sidebarResize = useSidebarResize();
   const triggerRef = useRef<HTMLElement | null>(null);
   const liveState = useRef(state);
   liveState.current = state;
@@ -481,7 +498,7 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
   return (
     <div
       className={`explorer map-explorer ${state.embed ? 'is-embedded' : ''} ${showResults ? 'results-open' : ''} ${hasSelection ? 'has-selection' : ''}`}
-      style={detailResize.style}
+      style={{ ...detailResize.style, ...sidebarResize.style }}
     >
       <SiteNavigation
         overlay
@@ -501,7 +518,11 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
         <h1 className="sr-only">Explore South-View and Atlanta</h1>
         <section className="atlas" aria-label="Explore the collection">
           <div className={`atlas-body ${hasSelection ? 'has-selection' : ''}`}>
-            <aside className="people-sidebar" aria-label="Search and browse people">
+            <aside
+              className={`people-sidebar ${sidebarResize.panelClass}`}
+              aria-label="Search and browse people"
+            >
+              {sidebarResize.handle}
               <div className="search-controls">
                 <label className="search-box" htmlFor="archive-search">
                   <Search size={19} strokeWidth={1.6} />
@@ -750,6 +771,9 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                             (placeOnly.summary || placePeople[0]?.relation.description) && (
                               <p className="quiet-note">{placeOnly.locationNote}</p>
                             )}
+                          {placeOnly.coordinates && (
+                            <DirectionsLink coordinates={placeOnly.coordinates} />
+                          )}
                         </div>
                         <section className="connected-places" aria-labelledby="panel-place-people">
                           <h3 id="panel-place-people">
@@ -821,20 +845,6 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                             )}
                           </div>
                         </div>
-                        {selected.portrait && (
-                          <p className="portrait-credit">
-                            Photo: {selected.portrait.credit}
-                            {portraitRights(selected, archive) && (
-                              <> · {portraitRights(selected, archive)}</>
-                            )}
-                            {' · '}
-                            <Link
-                              href={`/people/${encodeURIComponent(selected.id)}#photo-portrait`}
-                            >
-                              Source
-                            </Link>
-                          </p>
-                        )}
                         <p className="detail-summary">{selected.summary}</p>
                         <section className="connected-places">
                           <h3>
@@ -872,6 +882,9 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                                     <ArrowUpRight size={15} />
                                   </button>
                                   <p className="relation-note">{relation.description}</p>
+                                  {place.coordinates && (
+                                    <DirectionsLink coordinates={place.coordinates} />
+                                  )}
                                 </div>
                               );
                             })
@@ -888,6 +901,20 @@ export function Explorer({ archive }: { archive: ArchiveData }) {
                             <ArrowRight size={15} />
                           </button>
                         </section>
+                        {selected.portrait && (
+                          <p className="portrait-credit">
+                            Photo: {selected.portrait.credit}
+                            {portraitRights(selected, archive) && (
+                              <> · {portraitRights(selected, archive)}</>
+                            )}
+                            {' · '}
+                            <Link
+                              href={`/people/${encodeURIComponent(selected.id)}#photo-portrait`}
+                            >
+                              Source
+                            </Link>
+                          </p>
+                        )}
                       </>
                     )}
                   </div>
