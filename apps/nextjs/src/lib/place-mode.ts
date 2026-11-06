@@ -1,6 +1,15 @@
 type Relation = { personId: string; placeId: string };
 type PlaceLike = { id: string; scope: 'cemetery' | 'atlanta' };
 
+/**
+ * Google Maps directions to a mapped place, from wherever the visitor is. Coordinates are stored
+ * longitude first; Google expects latitude first.
+ */
+export function directionsUrl(coordinates: [number, number]) {
+  const [longitude, latitude] = coordinates;
+  return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+}
+
 export const precisionLabels = {
   reference: 'Reference position · unverified',
   address: 'Approximate address position',

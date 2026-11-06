@@ -1,12 +1,12 @@
 import Link from 'next/link';
-import { ArrowLeft, ArrowUpRight, ExternalLink, MapPin, Sprout } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, ExternalLink, MapPin, Navigation, Sprout } from 'lucide-react';
 import type { ArchiveData, Person, Place } from '@southview/validators';
 import { CitationMarks, SourceList } from './citations';
 import { ProvidedBy } from './provided-by';
 import { SiteNavigation } from './site-navigation';
 import { withArchiveReturn } from '@/lib/archive-return';
 import { displayPersonName } from '@/lib/person-name';
-import { placeConnections, precisionLabels } from '@/lib/place-mode';
+import { directionsUrl, placeConnections, precisionLabels } from '@/lib/place-mode';
 
 function years(person: Person) {
   if (person.birthYear) return `${person.birthYear} — ${person.deathYear ?? ''}`;
@@ -108,9 +108,20 @@ export function PlaceArchive({
             </p>
           </div>
           {place.coordinates ? (
-            <Link className="archive-text-link" href={mapUrl}>
-              <MapPin size={17} aria-hidden="true" /> Show on the map
-            </Link>
+            <p className="archive-place-links">
+              <Link className="archive-text-link" href={mapUrl}>
+                <MapPin size={17} aria-hidden="true" /> Show on the map
+              </Link>
+              <a
+                className="archive-text-link"
+                href={directionsUrl(place.coordinates)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Navigation size={17} aria-hidden="true" /> Directions in Google Maps
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </p>
           ) : (
             <p className="archive-unmapped">A map position is not yet available for this place.</p>
           )}

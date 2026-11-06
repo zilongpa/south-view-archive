@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { soleOccupant } from '../apps/nextjs/src/lib/place-mode';
+import { directionsUrl, soleOccupant } from '../apps/nextjs/src/lib/place-mode';
 
 const archive = {
   places: [
@@ -29,4 +29,12 @@ test('a shared crypt and every city place open as places', () => {
   assert.equal(soleOccupant(archive, 'lonely-church'), null);
   assert.equal(soleOccupant(archive, 'missing'), null);
   assert.equal(soleOccupant(archive, null), null);
+});
+
+test('directions go to Google Maps with latitude first', () => {
+  // Places store longitude first, as the map does.
+  assert.equal(
+    directionsUrl([-84.3751025, 33.7027115]),
+    'https://www.google.com/maps/dir/?api=1&destination=33.7027115,-84.3751025',
+  );
 });
