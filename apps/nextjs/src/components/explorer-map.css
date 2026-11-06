@@ -267,7 +267,8 @@
 /* At the end of the person panel, after their places, like image credits on the full page. */
 .map-explorer .connected-places + .portrait-credit {
   margin-top: 18px;
-  padding-top: 12px;
+  /* Room below too: it is the last thing before the panel's bottom bar. */
+  padding: 14px 0 20px;
   border-top: 1px solid var(--line, #ded9cd);
 }
 /* Directions: a small chip, top-right of each place card and under a place's location note. */
