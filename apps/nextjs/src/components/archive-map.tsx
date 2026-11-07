@@ -65,7 +65,13 @@ export default function ArchiveMap(props: Props) {
     () => createMarkerHoverController<PreviewTarget>((target) => current.current.onPreview(target)),
     [],
   );
-  const markerRefs = useRef(new Map<string, { marker: Marker; element: HTMLButtonElement }>());
+  // Each place has a pin and, separately, the dot at its exact position, kept above every pin.
+  const markerRefs = useRef(
+    new Map<
+      string,
+      { marker: Marker; element: HTMLButtonElement; dot: Marker; dotElement: HTMLElement }
+    >(),
+  );
   /** The marker the pointer (or keyboard focus) rests on; unrelated markers fade meanwhile. */
   const hoveredPlace = useRef<string | null>(null);
   const [error, setError] = useState(false);
@@ -237,10 +243,11 @@ export default function ArchiveMap(props: Props) {
             source: kind.source,
             filter: ['!', ['has', 'point_count']],
             paint: {
+              // Drawn as HTML above the pins instead (see the anchor dots below); kept for queries.
               'circle-radius': 4,
               'circle-color': kind.color,
-              'circle-stroke-color': '#fffcf6',
-              'circle-stroke-width': 2,
+              'circle-opacity': 0,
+              'circle-stroke-opacity': 0,
             },
           });
           map.addLayer({
@@ -343,7 +350,10 @@ export default function ArchiveMap(props: Props) {
       markerHover.clear();
       window.removeEventListener('blur', clearHover);
       window.removeEventListener('keydown', dismissHover);
-      markerRefs.current.forEach((m) => m.marker.remove());
+      markerRefs.current.forEach((m) => {
+        m.marker.remove();
+        m.dot.remove();
+      });
       markerRefs.current.clear();
       map?.remove();
       mapRef.current = null;
@@ -386,9 +396,11 @@ export default function ArchiveMap(props: Props) {
         related.add(hovered);
       }
       const dimming = related.size > 0;
-      markerRefs.current.forEach((entry, id) =>
-        entry.element.classList.toggle('is-dimmed', dimming && !related.has(id)),
-      );
+      markerRefs.current.forEach((entry, id) => {
+        const dim = dimming && !related.has(id);
+        entry.element.classList.toggle('is-dimmed', dim);
+        entry.dotElement.classList.toggle('is-dimmed', dim);
+      });
       for (const kind of markerKinds) {
         if (!map.getLayer(`${kind.source}-clusters`)) continue;
         map.setPaintProperty(`${kind.source}-clusters`, 'circle-opacity', dimming ? 0.3 : 1);
@@ -423,6 +435,7 @@ export default function ArchiveMap(props: Props) {
           markerHover.leave(entry.element);
           if (hoveredPlace.current === id) hoveredPlace.current = null;
           entry.marker.remove();
+          entry.dot.remove();
           markerRefs.current.delete(id);
         }
       });
@@ -521,7 +534,12 @@ export default function ArchiveMap(props: Props) {
           unrest(place.id);
           current.current.onPreview(null);
         };
-        if (!previous)
+        if (!previous) {
+          const dotElement = document.createElement('span');
+          dotElement.className = `map-anchor-dot ${place.scope === 'cemetery' ? 'is-cemetery' : 'is-atlanta'}`;
+          dotElement.setAttribute('aria-hidden', 'true');
+          // MapLibre writes the marker's own opacity inline, so the dot is drawn by a child.
+          dotElement.append(document.createElement('span'));
           markerRefs.current.set(place.id, {
             element: el,
             marker: new maplibregl.Marker({
@@ -532,9 +550,30 @@ export default function ArchiveMap(props: Props) {
             })
               .setLngLat(place.coordinates!)
               .addTo(map),
+            dotElement,
+            dot: new maplibregl.Marker({
+              element: dotElement,
+              anchor: 'center',
+              subpixelPositioning: true,
+            })
+              .setLngLat(place.coordinates!)
+              .addTo(map),
           });
-        else previous.marker.setLngLat(place.coordinates!);
+        } else {
+          previous.marker.setLngLat(place.coordinates!);
+          previous.dot.setLngLat(place.coordinates!);
+        }
       });
+      // Pins further south sit in front of those further north, the selected pin in front of all;
+      // the dots stay above every pin, so no exact position is ever hidden.
+      [...visiblePlaces]
+        .sort((a, b) => b.coordinates![1] - a.coordinates![1])
+        .forEach((place, index) => {
+          const entry = markerRefs.current.get(place.id);
+          if (!entry) return;
+          entry.element.style.zIndex =
+            current.current.selectedPlaceId === place.id ? '1000' : String(10 + index);
+        });
       applyDim();
     };
     refreshMarkers.current = render;

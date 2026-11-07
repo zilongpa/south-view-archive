@@ -619,8 +619,28 @@
   align-items: center;
   gap: 2px;
 }
-.map-explorer .map-marker.is-selected {
-  z-index: 3;
+/* The exact position of each place, above every pin (pins set their own order inline). */
+.map-explorer .map-anchor-dot {
+  z-index: 2000;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.map-explorer .map-anchor-dot > span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 2px solid #fffcf6;
+  border-radius: 50%;
+  background: #722d3c;
+  transition: opacity 0.18s ease;
+}
+.map-explorer .map-anchor-dot.is-atlanta > span {
+  background: #4f5a46;
+}
+.map-explorer .map-anchor-dot.is-dimmed > span {
+  opacity: 0.28;
 }
 /* Resting on a marker fades every marker that shares no person with it, so the places of one
    life stand out from the rest of the map. */
